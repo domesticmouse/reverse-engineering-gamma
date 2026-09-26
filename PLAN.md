@@ -314,13 +314,42 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
 
 ---
 
-### Phase 5: Audio & MIDI Verification
+### Phase 5: Audio & MIDI Verification (ACTIVE)
 **Goal:** Validate audio generation and external MIDI communication.
 
-1. **Stereo Audio Output:**
-   - Initialize Daisy Seed 2 DFM's PCM3060 codec via SAI.
-   - Generate a stereo 440 Hz test tone to verify output via the 3.5mm headphone jack.
-2. **MIDI TRS Output:**
+1. **Stereo Audio Engine (Firmware Implemented & Ready for Hardware Verification):**
+   - Source: [`firmware/phase5_audio/main.cpp`](firmware/phase5_audio/main.cpp)
+   - Binary: `firmware/phase5_audio/build/phase5_audio.bin`
+   - Compiled with **`APP_TYPE = BOOT_SRAM`** (vectors at `0x24000000`, validated entry point `0x24000795`).
+   - Links `libDaisy` and `DaisySP` (`Oscillator`, `Svf` filters).
+   - Initializes on-board **PCM3060 24-bit stereo codec via SAI1 @ 48 kHz** (Daisy Seed 2 DFM).
+   - **Mode 0: Interactive Synthesizer:**
+     - **7 Note Keys (N1–N7):** Play C Major scale notes ($C_4$ to $B_4$, 261.63 Hz – 493.88 Hz) through an envelope-smoothed oscillator and dedicated state variable lowpass filter.
+     - **7 Chord Keys (C1–C7):** Play full 3-oscillator polyphonic triads ($C\text{ Maj}$, $D\text{ Min}$, $E\text{ Min}$, $F\text{ Maj}$, $G\text{ Maj}$, $A\text{ Min}$, $B\text{ Dim}$) through a dedicated state variable lowpass filter.
+     - **Potentiometers (K0–K3):**
+       - `K0` (Chord Vol): Chord synthesizer volume (0% to 100%).
+       - `K1` (Chord Filter): Chord lowpass filter cutoff (100 Hz to 14,000 Hz).
+       - `K2` (Notes Vol): Note synthesizer volume (0% to 100%).
+       - `K3` (Notes Filter): Note lowpass filter cutoff (100 Hz to 14,000 Hz).
+     - **Joysticks:**
+       - `LX` (Pitch Bend): $\pm 2$ semitones bend.
+       - `LY` (Resonance): Modulates filter resonance ($Q = 0.05$ to $0.75$).
+       - `RX` (Stereo Pan): Pans mix smoothly between Left and Right channels.
+     - **Rotary Encoder:**
+       - Turn dial: Cycles oscillator waveform (`SINE` $\rightarrow$ `TRI` $\rightarrow$ `SAW` $\rightarrow$ `SQR`).
+       - Click dial: Toggles between **SYNTH MODE** and **TEST TONE MODE**.
+   - **Mode 1: Diagnostic Test Tone (Stereo Channel Isolation):**
+     - Continuous test tone to test 3.5mm stereo headphone output and codec DAC.
+     - `K0`: Channel routing selector (**Left Only** / **Stereo Center** / **Right Only**) for channel isolation checks.
+     - `K1`: Sweep test frequency (50 Hz to 2,000 Hz).
+     - `K2`: Master Volume (0% to 100%).
+   - **OLED Dashboard (SSD1306 128x64):**
+     - Real-time stereo peak VU meters (`L` and `R`).
+     - Real-time active note, chord, frequency, volume %, and filter cutoff display.
+     - Waveform indicator and last event log.
+   - **USB CDC Diagnostics:** Non-blocking serial logging and commands (`'m'`/`'t'` toggle mode, `'w'` cycle waveform, `'b'` reboot to DFU bootloader).
+
+2. **MIDI TRS Output (Upcoming):**
    - Test potential UART TX pins (e.g. `D14` / `USART1_TX`, `D29` / `USART3_TX`).
    - Transmit continuous MIDI Note On / Note Off messages at 31,250 baud to verify the 3.5mm MIDI Out jack.
 
