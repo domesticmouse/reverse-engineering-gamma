@@ -14,7 +14,7 @@ The Gamma features a compact, performance-oriented interface:
 * **Keys:** 14 low-profile tactile keys (7 chord keys on the left, 7 note keys on the right)
 * **Thumbsticks:** 2 analog joysticks (Left X/Y, Right X/Y for modulation and chord alterations)
 * **Knobs:** 4 potentiometers (Chords Volume/Filter, Notes Volume/Filter)
-* **Encoder:** 1 rotary encoder with integrated push button (key/scale selection)
+* **Encoder:** 1 rotary encoder with integrated push button (key/scale selection; 4-wire harness: shared GND + Phase A, Phase B, Push Switch)
 * **Audio:** 3.5mm stereo headphone output (driven by on-board PCM3060 codec via SAI)
 * **MIDI:** 3.5mm TRS MIDI output (UART TX)
 * **USB:** USB-C connector for power, DFU firmware flashing, and USB serial/MIDI communication
@@ -28,12 +28,20 @@ For the detailed step-by-step plan covering software setup, non-destructive flas
 
 ---
 
+## Skills & Runbooks
+
+Operational runbooks and automated tooling are maintained as workspace skills:
+* **[Gamma Firmware Flashing](.agents/skills/gamma-firmware-flash/SKILL.md)**: Build, validate, and flash custom/diagnostic firmware targeting `BOOT_SRAM` (`0x24000000`) over USB DFU with automated bootloader polling.
+* **[Gamma Firmware Restore](.agents/skills/gamma-firmware-restore/SKILL.md)**: 1-click unbrick and factory firmware recovery (`gamma-v2.0.3.bin`) via USB DFU.
+
+---
+
 ## Project Status
 
 - [x] **Toolchain & Software:** ARM toolchain (`arm-none-eabi-gcc 15.3.1`), `dfu-util 0.11`, `make`, and serial monitors (`tio`, `minicom`, `screen`) confirmed working.
 - [x] **Submodules:** `libDaisy` and `DaisySP` linked as Git submodules and compiled.
-- [x] **Phase 0 (Baseline Verification):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Flash memory readout (`dfu-util -U`) confirmed unsupported by the Daisy Bootloader.
-- [ ] **Phase 1 (Diagnostic Console & I2C Scan):** Diagnostic firmware developed (`firmware/phase1_i2c_scan`). Initial flash attempt with `BOOT_QSPI` was rejected by the Daisy Bootloader (error LED blinking, OLED remains on `this.is.NOISE inc` splash). Reconfigured and rebuilt for `BOOT_SRAM` (`0x24000000`). Ready for flash.
+- [x] **Phase 0 (Baseline Verification & Safety Net):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Factory firmware binaries (`gamma-v2.0.3.bin` and `gamma1_1.bin`) downloaded and verified. Automated restore skill created and tested.
+- [ ] **Phase 1 (Diagnostic Console & I2C Scan):** Diagnostic firmware developed (`firmware/phase1_i2c_scan`). Target architecture verified as `BOOT_SRAM` (`0x24000000`). Ready for flash via the flashing skill.
 
 ---
 

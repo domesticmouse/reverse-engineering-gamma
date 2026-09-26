@@ -75,7 +75,7 @@ The Gamma synthesizer exposes the following controls and peripherals to be mappe
 | **Potentiometers** | 4 rotary knobs (Chords Vol/Filter, Notes Vol/Filter) | Analog voltage dividers to ADC | 4 ADC channels |
 | **Thumbsticks** | 2 analog joysticks (Left X/Y, Right X/Y) | 2 axes each to ADC | 4 ADC channels |
 | **Keys** | 14 tactile low-profile switches (7 chord, 7 note) | Digital inputs (active low w/ pull-ups) | 14 GPIO pins (or matrix) |
-| **Rotary Encoder** | 1 rotary dial (scale/key selection) | Quadrature A & B + integrated push switch | 3 GPIO pins |
+| **Rotary Encoder** | 1 rotary dial w/ push switch (scale/key selection) | Quadrature A & B + push switch (4-wire harness: GND + 3 GPIOs) | 3 GPIO pins |
 | **Audio Output** | 3.5mm stereo headphone jack | On-board PCM3060 codec via SAI | Internal Daisy routing |
 | **MIDI Output** | 3.5mm TRS MIDI Out | Hardware UART TX @ 31,250 baud | 1 UART TX pin |
 | **USB-C** | Power, flashing (DFU), USB Serial/MIDI | STM32 USB OTG High Speed/Full Speed | Built-in USB D+/D- |
@@ -97,7 +97,7 @@ flowchart TD
 ---
 
 ### Phase 0: Baseline Verification & Firmware Backup
-**Goal:** Verify communication over USB-C and attempt to back up the factory firmware before any overwrite.
+**Goal:** Verify communication over USB-C, understand the bootloader runtime model, and secure a verifiable factory restore path.
 
 1. **Boot into DFU Mode:**
    - Put the Daisy into system bootloader mode (hold `BOOT`, tap `RESET`, release `BOOT`).
@@ -110,15 +110,35 @@ flowchart TD
      Found DFU: [0483:df11] ver=0200, devnum=1, cfg=1, intf=0, path="1-1", alt=0, name="@Flash /0x90000000/64*4Kg/0x90040000/60*64Kg/0x90400000/60*64Kg", serial="3067366D3433"
      Product: "Daisy Bootloader" (Electrosmith)
      ```
-   - Programs are stored in QSPI flash starting at `0x90040000` (compiled with `APP_TYPE = BOOT_QSPI`).
 
-2. **Attempt Memory Dump:**
-   - Attempted memory read via `dfu-util -U`:
-     ```bash
-     dfu-util -a 0 -s 0x90000000:0x800000 -U backups/gamma_qspi_flash_backup.bin
-     ```
-   - **Result:** Failed with `LIBUSB_ERROR_PIPE` (`dfuse_upload: libusb_control_transfer returned -9`). The Electro-Smith Daisy Bootloader does not implement DFU upload (readout), or chip Readout Protection (RDP) is active.
-   - **Factory Firmware Restore Path:** Confirmed official web updates and firmware tools are hosted at [thisisnoiseinc.com](https://thisisnoiseinc.com) via their Web Update Tool.
+2. **Bootloader Runtime & Memory Architecture Findings:**
+   - **Storage vs. Execution:** Programs are stored in external QSPI flash starting at `0x90040000`. However, the Daisy Bootloader on this device is configured to load binaries into **AXI SRAM (`0x24000000`)** before branching to them (`APP_TYPE = BOOT_SRAM`).
+   - **Boot Window:** On power-up or hardware reset, the bootloader listens for DFU for ~2 to 2.5 seconds (USER LED pulses). If no connection is made, it jumps to the SRAM application.
+   - **Display Persistence:** The 1.3" OLED panel retains its internal display RAM (GDDRAM) as long as 3.3V logic power is present. An unbooted MCU or bootloader halt leaves the previous image (`this.is.NOISE inc`) on screen.
+   - **Factory Firmware Recovery:** Acquired official production binaries hosted by the web update tool (`https://gammaupdatetool.netlify.app/`):
+     - [`backups/gamma-v2.0.3.bin`](backups/gamma-v2.0.3.bin) (v2.0.3, 360,740 bytes)
+     - [`backups/gamma1_1.bin`](backups/gamma1_1.bin) (v1.1, 269,764 bytes)
+   - **Vector Table Analysis of Factory Binary:**
+     - Initial SP: `0x20020000` (top of DTCMRAM, 128 KB)
+     - Reset Handler: `0x240047ED` (AXI SRAM at `0x24000000`)
+     - Confirms `APP_TYPE = BOOT_SRAM` is mandatory.
+     - Strings analysis shows the factory firmware is developed in embedded **Rust** (`src/display/`, `src/midi/`, `src/looper/`).
+   - **Automated Restore Skill:** Tested and verified unbricking over DFU:
+     - Runbook: [`.agents/skills/gamma-firmware-restore/SKILL.md`](.agents/skills/gamma-firmware-restore/SKILL.md)
+     - Script: `.agents/skills/gamma-firmware-restore/scripts/restore_firmware.py`
+     - Confirmed post-reboot enumeration: Product `Gamma`, Vendor `Electrosmith` (`0x0483:0x5740`).
+
+---
+
+### Dual-Track Strategy: Static Analysis & Dynamic Hardware Probing
+
+Having the official `gamma-v2.0.3.bin` unlocks a powerful dual-track workflow:
+1. **Static Analysis (Firmware Disassembly):** Inspect register writes and peripheral initializations directly in the binary (using `arm-none-eabi-objdump` / Ghidra) to identify:
+   - GPIO port clocks enabled via `RCC->AHB4ENR`
+   - Pin alternate function mappings (`AFR`) and mode registers (`MODER`)
+   - Active I2C controller (`I2C1` vs `I2C4`) and pin assignments (PB6/PB7 vs PB8/PB9)
+   - ADC channels assigned to potentiometers and joysticks
+2. **Dynamic Probing (Diagnostic Builds):** Flash targeted C++ diagnostic builds using `libDaisy` to interactively verify pin behaviors, readout analog voltages, and drive the OLED display.
 
 ---
 
@@ -127,11 +147,18 @@ flowchart TD
 
 1. **Diagnostic Firmware Setup:**
    - Source: [`firmware/phase1_i2c_scan/main.cpp`](firmware/phase1_i2c_scan/main.cpp)
+   - Must be compiled with **`APP_TYPE = BOOT_SRAM`** (generates vectors at `0x24000000`).
    - Initialize Daisy Seed 2 DFM core.
    - Start USB CDC (virtual serial port) so that `printf` logs over USB-C.
    - LED heartbeat and interactive serial commands (`'s'` for manual I2C scan, `'b'` for reboot into DFU bootloader).
 
-2. **I2C Bus Probing Implementation:**
+2. **Automated Flashing Workflow:**
+   - To bypass the 2-second bootloader timeout race, flashing is handled via the workspace skill:
+     - Runbook: [`.agents/skills/gamma-firmware-flash/SKILL.md`](.agents/skills/gamma-firmware-flash/SKILL.md)
+     - Script: `python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py`
+   - Automatically checks that Reset Handler is within `0x24000000` (`BOOT_SRAM`), polls for DFU every 100ms, and flashes to `0x90040000:leave` on reset.
+
+3. **I2C Bus Probing Implementation:**
    - Multi-candidate hardware bus scanner implemented covering:
      - **Bus 1:** `I2C1` on `D11` (`PB8` / SCL) & `D12` (`PB9` / SDA)
      - **Bus 2:** `I2C1` on `D13` (`PB6` / SCL) & `D14` (`PB7` / SDA)
@@ -140,12 +167,9 @@ flowchart TD
    - Sweeps addresses `0x08` through `0x77` in a 16x8 matrix.
    - OLED target detection: alerts on standard addresses `0x3C` and `0x3D`.
 
-3. **Flashing & Bootloader Execution Findings:**
-   - **Initial Flash Attempt (`BOOT_QSPI`):** Successfully programmed 83,060 bytes to QSPI address `0x90040000` via `dfu-util`.
-   - **Bootloader Rejection:** The on-board Daisy Bootloader rejected direct QSPI execution (`BOOT_QSPI`), triggering the bootloader's error blink pattern on the LED while holding the OLED on the factory splash screen (`this.is.NOISE inc`).
-   - **Target Reconfiguration:** Switched build target to `APP_TYPE = BOOT_SRAM` (using `STM32H750IB_sram.lds`, entry point in fast SRAM at `0x24000000` copied from QSPI flash).
-   - **Hardware Observation:** The Daisy Seed 2 DFM module's native USB port is physically obstructed by the internal battery pack. Flashing and serial communication must use the Gamma chassis USB-C port.
-   - **Current State:** `BOOT_SRAM` firmware compiled and awaiting next flash attempt. Device is currently displaying `this.is.NOISE inc` on OLED.
+4. **Current Status:**
+   - `phase1_i2c_scan.bin` compiled and validated for `BOOT_SRAM` (`SP: 0x20020000, Reset: 0x2400041D`).
+   - Unit is restored to factory `v2.0.3` and ready for diagnostic flashing.
 
 ---
 
@@ -194,6 +218,8 @@ flowchart TD
    - Press the 7 note keys (right side) one by one $\rightarrow$ Record matching GPIO pins.
    - Check if thumbsticks have integrated push buttons $\rightarrow$ Record pins if present.
 3. **Rotary Encoder Mapping:**
+   - **Physical Wiring:** Confirmed 4-wire harness connecting the encoder assembly to the main PCB: 1 shared Ground (GND) + 3 dedicated signal lines (Phase A, Phase B, and Push Switch).
+   - **Digital Interface:** Active-low digital inputs using Daisy internal pull-ups (`INPUT_PULLUP`).
    - Turn the encoder slowly clockwise $\rightarrow$ Identify the two quadrature pins (Phase A and Phase B).
    - Press the encoder knob $\rightarrow$ Identify the push switch GPIO pin.
 
