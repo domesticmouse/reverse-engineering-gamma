@@ -1,12 +1,21 @@
 #include "daisy_seed.h"
+#include "dev/oled_ssd130x.h"
+#include "util/oled_fonts.h"
 #include <cstdio>
 
 using namespace daisy;
 
 DaisySeed hw;
 
+// OLED driver configuration using SSD1306 128x64 on I2C1 (D11/D12)
+using MyOled = OledDisplay<SSD130xI2c128x64Driver>;
+static MyOled oled;
+static bool   g_oled_active        = false;
+static int    g_last_device_count  = 0;
+static char   g_detected_str[48]   = "Scanning...";
+
 // Flag to request immediate I2C scan from main loop
-static volatile bool g_request_scan = true;
+static volatile bool g_request_scan = false;
 
 // Callback for USB CDC Serial inputs
 void UsbRxCallback(uint8_t* buff, uint32_t* length)
@@ -122,13 +131,12 @@ static void DeinitI2CPins(const BusCandidate& bus)
         HAL_GPIO_DeInit(sda_port, (1U << bus.sda.pin));
 }
 
-static void ScanSingleBus(const BusCandidate& bus)
+static void ScanSingleBus(const BusCandidate& bus, bool is_primary)
 {
     hw.PrintLine("\n========================================================");
     hw.PrintLine("Probing: %s", bus.name);
     hw.PrintLine("========================================================");
 
-    // Reset peripheral state prior to init to ensure clean bus state
     if(bus.periph == I2CHandle::Config::Peripheral::I2C_1)
     {
         __HAL_RCC_I2C1_FORCE_RESET();
@@ -156,14 +164,14 @@ static void ScanSingleBus(const BusCandidate& bus)
         return;
     }
 
-    // Explicitly configure alternate function and pull-ups for candidate pins
     ConfigureI2CPins(bus);
-
     System::Delay(10);
 
     int  found_count   = 0;
     bool oled_3d_found = false;
     bool oled_3c_found = false;
+    char found_list[48] = "";
+    int  found_pos     = 0;
 
     hw.PrintLine("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f");
 
@@ -181,12 +189,18 @@ static void ScanSingleBus(const BusCandidate& bus)
             }
             else
             {
-                // Ping address using a 1-byte transmit (command 0x00 is NOP / Co=0 for SSD1306)
                 uint8_t dummy = 0x00;
                 auto res = i2c.TransmitBlocking(addr, &dummy, 1, 5);
                 if(res == I2CHandle::Result::OK)
                 {
                     pos += snprintf(line_buf + pos, sizeof(line_buf) - pos, "%02x ", addr);
+                    if(found_pos < (int)sizeof(found_list) - 7)
+                    {
+                        found_pos += snprintf(found_list + found_pos,
+                                              sizeof(found_list) - found_pos,
+                                              "0x%02X ",
+                                              addr);
+                    }
                     found_count++;
                     if(addr == 0x3D)
                         oled_3d_found = true;
@@ -219,7 +233,15 @@ static void ScanSingleBus(const BusCandidate& bus)
         }
     }
 
-    // Clean up pins after scan
+    if(is_primary)
+    {
+        g_last_device_count = found_count;
+        if(found_count > 0)
+            snprintf(g_detected_str, sizeof(g_detected_str), "%s", found_list);
+        else
+            snprintf(g_detected_str, sizeof(g_detected_str), "None");
+    }
+
     DeinitI2CPins(bus);
 }
 
@@ -228,15 +250,61 @@ static void RunAllBusScans()
     hw.PrintLine("\n>>> STARTING I2C CANDIDATE BUS SCAN <<<");
     for(size_t i = 0; i < sizeof(kCandidates) / sizeof(kCandidates[0]); i++)
     {
-        ScanSingleBus(kCandidates[i]);
+        ScanSingleBus(kCandidates[i], i == 0);
         System::Delay(50);
     }
     hw.PrintLine("\n>>> SCAN COMPLETE <<<\n");
 }
 
+static void InitOled()
+{
+    __HAL_RCC_I2C1_FORCE_RESET();
+    System::Delay(2);
+    __HAL_RCC_I2C1_RELEASE_RESET();
+
+    ConfigureI2CPins(kCandidates[0]);
+
+    MyOled::Config disp_cfg;
+    disp_cfg.driver_config.transport_config.i2c_address               = 0x3D;
+    disp_cfg.driver_config.transport_config.i2c_config.periph         = I2CHandle::Config::Peripheral::I2C_1;
+    disp_cfg.driver_config.transport_config.i2c_config.speed          = I2CHandle::Config::Speed::I2C_400KHZ;
+    disp_cfg.driver_config.transport_config.i2c_config.mode           = I2CHandle::Config::Mode::I2C_MASTER;
+    disp_cfg.driver_config.transport_config.i2c_config.pin_config.scl = seed::D11;
+    disp_cfg.driver_config.transport_config.i2c_config.pin_config.sda = seed::D12;
+    oled.Init(disp_cfg);
+    g_oled_active = true;
+}
+
+static void UpdateOledScreen(uint32_t uptime_sec)
+{
+    if(!g_oled_active)
+        return;
+
+    oled.Fill(false);
+    oled.SetCursor(0, 0);
+    oled.WriteString("GAMMA I2C SCANNER", Font_7x10, true);
+
+    oled.SetCursor(0, 14);
+    oled.WriteString("Bus: I2C1 (D11/D12)", Font_6x8, true);
+
+    oled.SetCursor(0, 26);
+    char buf[48];
+    snprintf(buf, sizeof(buf), "Devs: %s", g_detected_str);
+    oled.WriteString(buf, Font_6x8, true);
+
+    oled.SetCursor(0, 38);
+    oled.WriteString("OLED @ 0x3D: ACTIVE", Font_6x8, true);
+
+    oled.SetCursor(0, 52);
+    snprintf(buf, sizeof(buf), "Uptime: %lu s", (unsigned long)uptime_sec);
+    oled.WriteString(buf, Font_6x8, true);
+
+    oled.Update();
+}
+
 int main(void)
 {
-    // Initialize Daisy Seed 2 DFM
+    // Initialize Daisy Seed 2 DFM core
     hw.Init();
 
     // Start USB CDC Serial logging (non-blocking)
@@ -245,24 +313,23 @@ int main(void)
     // Register USB CDC receive callback for commands
     hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_INTERNAL);
 
-    // Initial delay for USB enumeration on host
-    System::Delay(1500);
-
     hw.PrintLine("\n\n========================================================");
     hw.PrintLine("  Gamma Mini Synth Diagnostic Console - Phase 1");
     hw.PrintLine("  Electro-Smith Daisy Seed 2 DFM (STM32H750 + PCM3060)");
     hw.PrintLine("========================================================");
     hw.PrintLine("Send 's' for scan, 'b' for DFU bootloader, 'h' for help.\n");
 
-    uint32_t last_scan_time  = System::GetNow();
-    uint32_t last_blink_time = System::GetNow();
-    bool     led_state       = false;
+    uint32_t last_scan_time   = 0;
+    uint32_t last_blink_time  = System::GetNow();
+    uint32_t last_screen_time = 0;
+    bool     led_state        = false;
+    bool     first_run        = true;
 
     while(1)
     {
         uint32_t now = System::GetNow();
 
-        // Blink LED at 2Hz (toggle every 250ms)
+        // Heartbeat LED always blinks at 2Hz (toggle every 250ms)
         if(now - last_blink_time >= 250)
         {
             last_blink_time = now;
@@ -270,13 +337,27 @@ int main(void)
             hw.SetLed(led_state);
         }
 
-        // Run scan if requested or every 10 seconds
-        if(g_request_scan || (now - last_scan_time >= 10000))
+        // Run bus scan and init OLED on first loop iteration or on demand
+        if(first_run || g_request_scan || (now - last_scan_time >= 30000))
         {
+            first_run      = false;
             g_request_scan = false;
             last_scan_time = now;
+
             hw.PrintLine("\n[Uptime: %lu ms]", (unsigned long)now);
             RunAllBusScans();
+
+            // Initialize OLED now that primary bus is probed
+            InitOled();
+            UpdateOledScreen(now / 1000);
+            last_screen_time = now;
+        }
+
+        // Refresh OLED screen every 500ms
+        if(g_oled_active && (now - last_screen_time >= 500))
+        {
+            last_screen_time = now;
+            UpdateOledScreen(now / 1000);
         }
 
         System::Delay(10);

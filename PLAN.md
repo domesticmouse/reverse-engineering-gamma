@@ -86,17 +86,20 @@ The Gamma synthesizer exposes the following controls and peripherals to be mappe
 
 ```mermaid
 flowchart TD
-    P0["Phase 0: Baseline & Firmware Backup"] --> P1["Phase 1: USB CDC & I2C Bus Scan"]
-    P1 --> P2["Phase 2: Display Initialization"]
-    P2 --> P3["Phase 3: ADC Mapping (Knobs & Joysticks)"]
+    P0["Phase 0: Baseline & Backup (COMPLETED)"]:::done --> P1["Phase 1: USB CDC & I2C Bus Scan (COMPLETED)"]:::done
+    P1 --> P2["Phase 2: Display Initialization (COMPLETED)"]:::done
+    P2 --> P3["Phase 3: ADC Mapping (Knobs & Joysticks) - IN PROGRESS"]:::active
     P3 --> P4["Phase 4: Digital Pin Mapping (Keys & Encoder)"]
     P4 --> P5["Phase 5: Audio & MIDI Verification"]
     P5 --> P6["Phase 6: Gamma Board Support Package (BSP)"]
+
+    classDef done fill:#2e7d32,stroke:#1b5e20,color:#fff
+    classDef active fill:#1565c0,stroke:#0d47a1,color:#fff
 ```
 
 ---
 
-### Phase 0: Baseline Verification & Firmware Backup
+### Phase 0: Baseline Verification & Firmware Backup (COMPLETED)
 **Goal:** Verify communication over USB-C, understand the bootloader runtime model, and secure a verifiable factory restore path.
 
 1. **Boot into DFU Mode:**
@@ -123,10 +126,19 @@ flowchart TD
      - Reset Handler: `0x240047ED` (AXI SRAM at `0x24000000`)
      - Confirms `APP_TYPE = BOOT_SRAM` is mandatory.
      - Strings analysis shows the factory firmware is developed in embedded **Rust** (`src/display/`, `src/midi/`, `src/looper/`).
-   - **Automated Restore Skill:** Tested and verified unbricking over DFU:
-     - Runbook: [`.agents/skills/gamma-firmware-restore/SKILL.md`](.agents/skills/gamma-firmware-restore/SKILL.md)
-     - Script: `.agents/skills/gamma-firmware-restore/scripts/restore_firmware.py`
-     - Confirmed post-reboot enumeration: Product `Gamma`, Vendor `Electrosmith` (`0x0483:0x5740`).
+   - **Bootloader Modes & DFU Entry Points:**
+     - **Hardware ROM Bootloader (Hold BOOT + Tap RESET):** Pulls the MCU's `BOOT0` pin HIGH and boots into STMicroelectronics' factory system ROM. Bypasses the Daisy Bootloader entirely; does not initialize the Seed 2 DFM High-Speed USB PHY (USER LED stays OFF, host cannot communicate). **Do not use this mode for flashing.**
+     - **Daisy Bootloader Grace Period (Tap RESET alone or Power-Cycle):** Microcontroller boots into internal flash (`0x08000000`), pulses/breathes USER LED, and listens for DFU on USB-C for ~2.5 seconds before jumping to the application at `0x90040000`. This is the primary interactive flashing workflow.
+     - **Daisy Bootloader Infinite Timeout (Gamma Menu `System -> Info -> Enter Boot`):** Sets `DAISY_INFINITE_TIMEOUT` in Backup SRAM (`0x38800000`) and soft-resets into the Daisy Bootloader, holding DFU mode indefinitely without timing out.
+   - **Clock Initialization Traps:**
+     - The Daisy Bootloader initializes the system PLL to 480 MHz before jumping to SRAM. In `daisy_seed.cpp`, `syscfg.skip_clocks` must remain `true` for SRAM builds. Re-configuring the active PLL in application code traps in `Error_Handler()` and freezes SysTick.
+   - **USB CDC Enumeration & VBUS Sensing Discovery:**
+     - Disassembly of official production firmware (`gamma-v2.0.3.bin` at `0x24029c78`) revealed that `hpcd_USB_OTG_FS.Init.vbus_sensing_enable` is set to **`DISABLE` (`0`)**.
+     - Upstream `libDaisy` defaults `vbus_sensing_enable` to `ENABLE` (`1`), requiring 5V on pin `PA9` to activate the internal D+ pullup resistor. Because Gamma does not route 5V VBUS to `PA9`, STM32 detects "cable disconnected" and never pulls up D+.
+     - Patched [`libDaisy/src/usbd/usbd_conf.c`](libDaisy/src/usbd/usbd_conf.c) to set `vbus_sensing_enable = DISABLE`.
+     - When launching from the bootloader, `syscfg.skip_clocks` is set, which leaves `HSI48` and `RCC_USBCLKSOURCE_HSI48` uninitialized unless explicitly enabled in application code.
+   - **I2C Bus Recovery:**
+     - Explicit bus reset (`__HAL_RCC_I2C1_FORCE_RESET()` / `RELEASE_RESET()`) and clean GPIO alternate function pin muxing (`GPIO_AF4_I2C1`) with pullups ensures reliable OLED communication without hanging on bus transitions.
 
 ---
 
@@ -144,19 +156,20 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
      - **Display Controller:** **SSD1306** (128x64). The display command sequence at `0x240077ca` matches standard SSD1306 init: `0xAE` (Display Off), `0xD5, 0x80` (Clock Div), `0xA8, 0x3F` (Multiplex 64), `0xDA, 0x12` (COM pins), `0x8D, 0x14` (Charge Pump).
    - **Daisy Hal Integration:** The firmware statically links libDaisy peripheral abstractions (`I2CHandle::Impl::Init` at `0x240270bc`).
 
-2. **Dynamic Probing (Diagnostic Builds):**
+2. **Dynamic Probing & On-Screen UI (Diagnostic Builds):**
    - Flash targeted C++ diagnostic builds using `libDaisy` to interactively verify pin behaviors, readout analog voltages, and drive the OLED display.
 
 ---
 
-### Phase 1: USB CDC Diagnostic Console & I2C Bus Scanning
-**Goal:** Establish serial communication over USB-C and probe for the 1.3" OLED display.
+### Phase 1: USB CDC Diagnostic Console & I2C Bus Scanning (COMPLETED)
+**Goal:** Establish serial communication over USB-C, probe for peripherals, and render live diagnostics on the 1.3" OLED display.
 
 1. **Diagnostic Firmware Setup:**
    - Source: [`firmware/phase1_i2c_scan/main.cpp`](firmware/phase1_i2c_scan/main.cpp)
-   - Compiled with **`APP_TYPE = BOOT_SRAM`** (vectors at `0x24000000`, validated: SP `0x20020000`, Reset `0x2400041D`).
-   - Daisy Seed 2 DFM core initialization and USB CDC virtual COM port logging.
-   - Non-blocking USB receive callback handling `'s'` (scan), `'b'` (DFU reboot), and `'h'` (help).
+   - Compiled with **`APP_TYPE = BOOT_SRAM`** (vectors at `0x24000000`, validated entry point `0x24000795`).
+   - Integrated HSI48 oscillator activation and routing for USB clock domain.
+   - Non-blocking USB CDC virtual COM port logging with receive commands (`'s'` scan, `'b'` DFU bootloader, `'h'` help).
+   - Integrated SSD1306 128x64 OLED display driver (`I2C1`, `D11`/`D12` @ `0x3D`) to render scan results and live uptime directly on the device.
    - LED heartbeat at 2 Hz (250ms toggle).
 
 2. **Automated Flashing Workflow:**
@@ -170,66 +183,91 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
      - **Bus 2:** `I2C1` on `D13` (`PB6` / SCL) & `D14` (`PB7` / SDA)
      - **Bus 3:** `I2C4` on `D11` (`PB8` / SCL) & `D12` (`PB9` / SDA)
      - **Bus 4:** `I2C4` on `D13` (`PB6` / SCL) & `D14` (`PB7` / SDA)
-   - **STM32 HAL Pin-Muxing Fix:** In STM32 HAL, `HAL_I2C_Init()` skips `HAL_I2C_MspInit()` if `hi2c->State != RESET`. To allow dynamic probing across multiple pin candidates on the same I2C peripheral instance, the scanner explicitly handles GPIO alternate function configuration and pin de-initialization between candidate sweeps.
-   - **Target Alert:** Automatically detects and alerts when an OLED device responds at standard address **`0x3D`** (factory default) or `0x3C`.
+   - **STM32 HAL Pin-Muxing Fix:** Explicitly re-initializes and de-initializes GPIO alternate function pin muxing between candidate sweeps.
+   - **Target Detection & On-Screen Output:** Live results displayed on both USB CDC serial and on the OLED dashboard.
 
-4. **Current Status:**
-   - Hardware pinout statically proven: **`I2C1` on `D11`/`PB8` (SCL) and `D12`/`PB9` (SDA) at address `0x3D`**.
-   - `phase1_i2c_scan.bin` compiled, updated with explicit pin-mux handling and OLED alerts, ready for live testing.
+4. **Hardware Verification Results:**
+   - Successfully flashed custom `BOOT_SRAM` firmware over USB DFU via the Daisy Bootloader.
+   - Live hardware execution confirmed on device:
+     - Scanned all candidate I2C peripherals and discovered the display responding at **`0x3D`**.
+     - Initialized the SSD1306 OLED display driver over `I2C1` (`seed::D11` / `seed::D12`).
+     - Real-time diagnostic UI actively running and rendering on the Gamma's physical display with ticking uptime counter.
 
 ---
 
-### Phase 2: OLED Display Initialization & Local UI
+### Phase 2: OLED Display Initialization & Local UI (COMPLETED)
 **Goal:** Drive the display directly to show live diagnostics on the device.
 
-1. **Display Driver Integration:**
-   - Controller: SSD1306 (128x64 monochrome).
-   - Interface: `I2C1` via `seed::D11` (SCL) & `seed::D12` (SDA) at 7-bit address **`0x3D`**.
-   - Clock speed: 400 kHz to 1 MHz.
+1. **Hardware Verification Results:**
+   - **Controller:** SSD1306 (128x64 monochrome).
+   - **Interface:** `I2C1` via `seed::D11` (PB8 / SCL) & `seed::D12` (PB9 / SDA) at 7-bit address **`0x3D`**.
+   - **Status:** **Fully verified on hardware**. Live graphics buffer rendering text and status frames reliably.
 2. **On-Screen Dashboard:**
-   - Render a diagnostic screen showing:
-     - Device uptime.
-     - Live values for analog channels and digital pin state changes.
+   - Rendered diagnostic screen showing:
+     - Header: `GAMMA I2C SCANNER`
+     - Bus: `I2C1 (D11/D12)`
+     - Discovered Devices: `0x3D`
+     - Status: `OLED @ 0x3D: Active`
+     - Live counter: `Uptime: Xs` updating continuously.
 
 ---
 
-### Phase 3: Analog Pin Mapping (Potentiometers & Joysticks)
-**Goal:** Map 4 knobs and 2 joysticks (4 axes) across Daisy's 14 ADC-capable pins.
+### Phase 3: Analog Pin Mapping (Potentiometers & Joysticks) - IN PROGRESS
+**Goal:** Map 4 knobs and 2 joysticks (4 axes) across Daisy's ADC-capable pins using live on-screen visual bargraphs and USB serial.
 
-1. **Diagnostic Firmware Setup:**
-   - Configure all available ADC channels (`A0` through `A11` / pins `D15` through `D28`) with DMA continuous reading and 12/16-bit resolution.
-   - Stream raw and normalized values to USB Serial and OLED.
-2. **Interactive Mapping Process:**
-   - **Knobs:**
-     - Turn Knob 1 (Chord Vol) $\rightarrow$ Note which ADC pin sweeps 0.0 to 1.0.
-     - Turn Knob 2 (Chord Filter) $\rightarrow$ Identify pin.
-     - Turn Knob 3 (Notes Vol) $\rightarrow$ Identify pin.
-     - Turn Knob 4 (Notes Filter) $\rightarrow$ Identify pin.
-   - **Thumbsticks:**
-     - Deflect Left Stick (X axis) $\rightarrow$ Identify pin and rest position (~0.5).
-     - Deflect Left Stick (Y axis) $\rightarrow$ Identify pin and rest position.
-     - Deflect Right Stick (X axis) $\rightarrow$ Identify pin and rest position.
-     - Deflect Right Stick (Y axis) $\rightarrow$ Identify pin and rest position.
-3. **Data Recording:**
-   - Record exact min/max/center values, jitter, and deadband limits.
+1. **Hardware Architecture & ADC Pin Candidates:**
+   - Electro-Smith Daisy Seed 2 DFM exposes 12 ADC channels on pins `A0`–`A11` (`D15`–`D28`), plus additional internal channels.
+   - The Gamma features:
+     - **4 Rotary Potentiometers:** Chord Volume, Chord Filter, Notes Volume, Notes Filter.
+     - **2 Dual-Axis Thumbsticks:** Left Stick (X, Y) and Right Stick (X, Y).
+     - Total: Exactly 8 analog ADC channels required.
+
+2. **OLED Visual Calibration Dashboard:**
+   - Leverage the operational 128x64 OLED display to render a real-time analog diagnostic interface:
+     - Top status bar: Active ADC channel count and frame rate.
+     - Split display layout:
+       - **Left column:** Channels 0–3 with 32-pixel horizontal bargraphs and hex/percent readouts.
+       - **Right column:** Channels 4–7 with 32-pixel horizontal bargraphs and hex/percent readouts.
+       - Page toggle or secondary screen for remaining ADC channels (8–11).
+     - Auto-highlighting indicator: Flags the channel with the largest delta in the last 500ms, making identification instantaneous without checking serial terminal.
+
+3. **Interactive Identification Protocol:**
+   - **Knobs (Single Turn Sweep):**
+     1. Turn Knob 1 (Chord Vol) $\rightarrow$ Note highlighted ADC channel sweeping `0%` to `100%`.
+     2. Turn Knob 2 (Chord Filter) $\rightarrow$ Note highlighted ADC channel.
+     3. Turn Knob 3 (Notes Vol) $\rightarrow$ Note highlighted ADC channel.
+     4. Turn Knob 4 (Notes Filter) $\rightarrow$ Note highlighted ADC channel.
+   - **Thumbsticks (Spring-Centered):**
+     1. Deflect Left Stick Left/Right (X axis) $\rightarrow$ Note channel centered at ~50% moving 0%–100%.
+     2. Deflect Left Stick Up/Down (Y axis) $\rightarrow$ Note channel centered at ~50%.
+     3. Deflect Right Stick Left/Right (X axis) $\rightarrow$ Note channel centered at ~50%.
+     4. Deflect Right Stick Up/Down (Y axis) $\rightarrow$ Note channel centered at ~50%.
+   - **Calibration Data:**
+     - Record minimum value, center deadband, maximum value, and ADC noise floor / jitter for each channel.
 
 ---
 
 ### Phase 4: Digital Pin Mapping (14 Keys & Rotary Encoder)
-**Goal:** Identify GPIO pins for the 14 keys and the rotary encoder.
+**Goal:** Identify GPIO pins for the 14 keys and the rotary encoder using an on-screen interactive key grid.
 
-1. **Diagnostic Firmware Setup:**
-   - Set all remaining unallocated GPIO pins as inputs with internal pull-up resistors (`INPUT_PULLUP`).
-   - Log any pin transition (`HIGH` $\rightarrow$ `LOW` falling edge) over USB Serial.
-2. **Interactive Key Probing:**
-   - Press the 7 chord keys (left side) one by one $\rightarrow$ Record matching GPIO pins.
-   - Press the 7 note keys (right side) one by one $\rightarrow$ Record matching GPIO pins.
-   - Check if thumbsticks have integrated push buttons $\rightarrow$ Record pins if present.
-3. **Rotary Encoder Mapping:**
-   - **Physical Wiring:** Confirmed 4-wire harness connecting the encoder assembly to the main PCB: 1 shared Ground (GND) + 3 dedicated signal lines (Phase A, Phase B, and Push Switch).
-   - **Digital Interface:** Active-low digital inputs using Daisy internal pull-ups (`INPUT_PULLUP`).
-   - Turn the encoder slowly clockwise $\rightarrow$ Identify the two quadrature pins (Phase A and Phase B).
-   - Press the encoder knob $\rightarrow$ Identify the push switch GPIO pin.
+1. **Hardware Overview:**
+   - 14 low-profile mechanical keyboard switches: 7 chord keys (left side) and 7 note keys (right side).
+   - 1 rotary encoder with integrated push switch (4-wire harness: GND + Phase A, Phase B, Switch).
+   - Digital inputs configured with internal pull-up resistors (`INPUT_PULLUP`, active low).
+
+2. **OLED Interactive Grid UI:**
+   - Render a physical layout map on the 128x64 display:
+     - Left box: 7 Chord Key indicators (`C1`–`C7`) that invert when pressed.
+     - Right box: 7 Note Key indicators (`N1`–`N7`) that invert when pressed.
+     - Bottom row: Encoder rotation counter (`CW`/`CCW`) and Push Switch (`ENC_SW`) indicator.
+     - Active Pin Readout: Live banner showing the exact Daisy pin number (`D0`–`D30`) of the most recently triggered input.
+
+3. **Interactive Key Probing Protocol:**
+   - Press Chord keys 1 through 7 sequentially $\rightarrow$ Record corresponding GPIO pins.
+   - Press Note keys 1 through 7 sequentially $\rightarrow$ Record corresponding GPIO pins.
+   - Check thumbsticks for integrated push-button switches (press down on both sticks) $\rightarrow$ Record pins if present.
+   - Rotate encoder clockwise/counter-clockwise $\rightarrow$ Identify Phase A and Phase B pins and quadrature sequence.
+   - Press encoder dial $\rightarrow$ Identify encoder push-switch pin.
 
 ---
 
