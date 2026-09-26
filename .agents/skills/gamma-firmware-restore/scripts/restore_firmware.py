@@ -79,7 +79,9 @@ def wait_and_flash(bin_path, timeout=60):
 def main():
     repo_root = get_repo_root()
     bin_path = ensure_firmware_binary(repo_root)
-    wait_and_flash(bin_path)
+    timeout = int(sys.argv[1]) if len(sys.argv) > 1 else 180
+    wait_and_flash(bin_path, timeout=timeout)
+
 
 if __name__ == "__main__":
     main()
