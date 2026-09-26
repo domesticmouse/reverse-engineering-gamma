@@ -71,7 +71,7 @@ The Gamma synthesizer exposes the following controls and peripherals to be mappe
 
 | Component | Description | Expected Interface | Estimated Pins |
 | :--- | :--- | :--- | :--- |
-| **OLED Display** | 1.3" display (SSD1306 or SH1106 controller) | I2C (SCL/SDA) or SPI | 2 (I2C) or 4-5 (SPI) |
+| **OLED Display** | 1.3" display (SSD1306 controller, 128x64) | **I2C1** (SCL: `D11`/`PB8`, SDA: `D12`/`PB9`) @ **`0x3D`** | 2 (`D11`, `D12`) — **Confirmed** |
 | **Potentiometers** | 4 rotary knobs (Chords Vol/Filter, Notes Vol/Filter) | Analog voltage dividers to ADC | 4 ADC channels |
 | **Thumbsticks** | 2 analog joysticks (Left X/Y, Right X/Y) | 2 axes each to ADC | 4 ADC channels |
 | **Keys** | 14 tactile low-profile switches (7 chord, 7 note) | Digital inputs (active low w/ pull-ups) | 14 GPIO pins (or matrix) |
@@ -132,13 +132,20 @@ flowchart TD
 
 ### Dual-Track Strategy: Static Analysis & Dynamic Hardware Probing
 
-Having the official `gamma-v2.0.3.bin` unlocks a powerful dual-track workflow:
-1. **Static Analysis (Firmware Disassembly):** Inspect register writes and peripheral initializations directly in the binary (using `arm-none-eabi-objdump` / Ghidra) to identify:
-   - GPIO port clocks enabled via `RCC->AHB4ENR`
-   - Pin alternate function mappings (`AFR`) and mode registers (`MODER`)
-   - Active I2C controller (`I2C1` vs `I2C4`) and pin assignments (PB6/PB7 vs PB8/PB9)
-   - ADC channels assigned to potentiometers and joysticks
-2. **Dynamic Probing (Diagnostic Builds):** Flash targeted C++ diagnostic builds using `libDaisy` to interactively verify pin behaviors, readout analog voltages, and drive the OLED display.
+Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-engineering alongside dynamic probing:
+
+1. **Static Analysis Results (Verified from Disassembly):**
+   - **Display Hardware Peripheral:** Disassembly of the hardware initialization routine (`0x24007f1c` - `0x24007f3e` and `0x240077b0`) revealed the exact configuration passed to `I2CHandle::Init`:
+     - **Peripheral:** `I2C1` (`0x40005400`)
+     - **SCL Pin:** `seed::D11` (`PB8`, GPIO Port B pin 8)
+     - **SDA Pin:** `seed::D12` (`PB9`, GPIO Port B pin 9)
+     - **Bus Speed:** `I2C_1MHZ` (Fast Mode Plus)
+     - **I2C Device Address:** **`0x3D`** (`movs r3, #61` at `0x24007f2a`)
+     - **Display Controller:** **SSD1306** (128x64). The display command sequence at `0x240077ca` matches standard SSD1306 init: `0xAE` (Display Off), `0xD5, 0x80` (Clock Div), `0xA8, 0x3F` (Multiplex 64), `0xDA, 0x12` (COM pins), `0x8D, 0x14` (Charge Pump).
+   - **Daisy Hal Integration:** The firmware statically links libDaisy peripheral abstractions (`I2CHandle::Impl::Init` at `0x240270bc`).
+
+2. **Dynamic Probing (Diagnostic Builds):**
+   - Flash targeted C++ diagnostic builds using `libDaisy` to interactively verify pin behaviors, readout analog voltages, and drive the OLED display.
 
 ---
 
@@ -147,37 +154,38 @@ Having the official `gamma-v2.0.3.bin` unlocks a powerful dual-track workflow:
 
 1. **Diagnostic Firmware Setup:**
    - Source: [`firmware/phase1_i2c_scan/main.cpp`](firmware/phase1_i2c_scan/main.cpp)
-   - Must be compiled with **`APP_TYPE = BOOT_SRAM`** (generates vectors at `0x24000000`).
-   - Initialize Daisy Seed 2 DFM core.
-   - Start USB CDC (virtual serial port) so that `printf` logs over USB-C.
-   - LED heartbeat and interactive serial commands (`'s'` for manual I2C scan, `'b'` for reboot into DFU bootloader).
+   - Compiled with **`APP_TYPE = BOOT_SRAM`** (vectors at `0x24000000`, validated: SP `0x20020000`, Reset `0x2400041D`).
+   - Daisy Seed 2 DFM core initialization and USB CDC virtual COM port logging.
+   - Non-blocking USB receive callback handling `'s'` (scan), `'b'` (DFU reboot), and `'h'` (help).
+   - LED heartbeat at 2 Hz (250ms toggle).
 
 2. **Automated Flashing Workflow:**
-   - To bypass the 2-second bootloader timeout race, flashing is handled via the workspace skill:
-     - Runbook: [`.agents/skills/gamma-firmware-flash/SKILL.md`](.agents/skills/gamma-firmware-flash/SKILL.md)
-     - Script: `python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py`
-   - Automatically checks that Reset Handler is within `0x24000000` (`BOOT_SRAM`), polls for DFU every 100ms, and flashes to `0x90040000:leave` on reset.
+   - Runbook: [`.agents/skills/gamma-firmware-flash/SKILL.md`](.agents/skills/gamma-firmware-flash/SKILL.md)
+   - Script: `python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py`
+   - Automatically polls for DFU every 100ms, validates SRAM vector layout, and flashes to `0x90040000:leave`.
 
-3. **I2C Bus Probing Implementation:**
-   - Multi-candidate hardware bus scanner implemented covering:
-     - **Bus 1:** `I2C1` on `D11` (`PB8` / SCL) & `D12` (`PB9` / SDA)
+3. **I2C Scanner Implementation & HAL Hardware Fix:**
+   - Multi-candidate hardware bus scanner:
+     - **Bus 1 (Hardware Verified):** `I2C1` on `D11` (`PB8` / SCL) & `D12` (`PB9` / SDA)
      - **Bus 2:** `I2C1` on `D13` (`PB6` / SCL) & `D14` (`PB7` / SDA)
      - **Bus 3:** `I2C4` on `D11` (`PB8` / SCL) & `D12` (`PB9` / SDA)
      - **Bus 4:** `I2C4` on `D13` (`PB6` / SCL) & `D14` (`PB7` / SDA)
-   - Sweeps addresses `0x08` through `0x77` in a 16x8 matrix.
-   - OLED target detection: alerts on standard addresses `0x3C` and `0x3D`.
+   - **STM32 HAL Pin-Muxing Fix:** In STM32 HAL, `HAL_I2C_Init()` skips `HAL_I2C_MspInit()` if `hi2c->State != RESET`. To allow dynamic probing across multiple pin candidates on the same I2C peripheral instance, the scanner explicitly handles GPIO alternate function configuration and pin de-initialization between candidate sweeps.
+   - **Target Alert:** Automatically detects and alerts when an OLED device responds at standard address **`0x3D`** (factory default) or `0x3C`.
 
 4. **Current Status:**
-   - `phase1_i2c_scan.bin` compiled and validated for `BOOT_SRAM` (`SP: 0x20020000, Reset: 0x2400041D`).
-   - Unit is restored to factory `v2.0.3` and ready for diagnostic flashing.
+   - Hardware pinout statically proven: **`I2C1` on `D11`/`PB8` (SCL) and `D12`/`PB9` (SDA) at address `0x3D`**.
+   - `phase1_i2c_scan.bin` compiled, updated with explicit pin-mux handling and OLED alerts, ready for live testing.
 
 ---
 
 ### Phase 2: OLED Display Initialization & Local UI
-**Goal:** Drive the display directly to display feedback on the device.
+**Goal:** Drive the display directly to show live diagnostics on the device.
 
 1. **Display Driver Integration:**
-   - Use standard SSD1306 / SH1106 128x64 monochrome driver over the identified bus and address.
+   - Controller: SSD1306 (128x64 monochrome).
+   - Interface: `I2C1` via `seed::D11` (SCL) & `seed::D12` (SDA) at 7-bit address **`0x3D`**.
+   - Clock speed: 400 kHz to 1 MHz.
 2. **On-Screen Dashboard:**
    - Render a diagnostic screen showing:
      - Device uptime.

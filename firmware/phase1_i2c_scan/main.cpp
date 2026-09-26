@@ -48,7 +48,7 @@ struct BusCandidate
 };
 
 static const BusCandidate kCandidates[] = {
-    {"I2C1 on D11 (PB8 / SCL) & D12 (PB9 / SDA)",
+    {"I2C1 on D11 (PB8 / SCL) & D12 (PB9 / SDA) [Verified Hardware]",
      I2CHandle::Config::Peripheral::I2C_1,
      seed::D11,
      seed::D12},
@@ -66,24 +66,60 @@ static const BusCandidate kCandidates[] = {
      seed::D14},
 };
 
-static void SetPinInternalPullup(Pin pin)
+static GPIO_TypeDef* GetHalPort(Pin pin)
 {
-    GPIO_TypeDef* port = pin.port == PORTA ? GPIOA
-                         : pin.port == PORTB ? GPIOB
-                         : pin.port == PORTC ? GPIOC
-                         : pin.port == PORTD ? GPIOD
-                         : pin.port == PORTE ? GPIOE
-                         : pin.port == PORTF ? GPIOF
-                         : pin.port == PORTG ? GPIOG
-                         : pin.port == PORTH ? GPIOH
-                         : pin.port == PORTI ? GPIOI
-                         : pin.port == PORTJ ? GPIOJ
-                         : pin.port == PORTK ? GPIOK : nullptr;
-    if(port)
+    switch(pin.port)
     {
-        uint32_t pin_num = pin.pin;
-        port->PUPDR = (port->PUPDR & ~(3U << (pin_num * 2))) | (1U << (pin_num * 2));
+        case PORTA: return GPIOA;
+        case PORTB: return GPIOB;
+        case PORTC: return GPIOC;
+        case PORTD: return GPIOD;
+        case PORTE: return GPIOE;
+        case PORTF: return GPIOF;
+        case PORTG: return GPIOG;
+        case PORTH: return GPIOH;
+        case PORTI: return GPIOI;
+        case PORTJ: return GPIOJ;
+        case PORTK: return GPIOK;
+        default: return nullptr;
     }
+}
+
+static uint8_t GetI2CAltFn(Pin pin, I2CHandle::Config::Peripheral periph)
+{
+    if(periph == I2CHandle::Config::Peripheral::I2C_4)
+        return GPIO_AF6_I2C4;
+    return GPIO_AF4_I2C1;
+}
+
+static void ConfigureI2CPins(const BusCandidate& bus)
+{
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    GPIO_InitTypeDef gpio_init;
+    gpio_init.Mode      = GPIO_MODE_AF_OD;
+    gpio_init.Pull      = GPIO_PULLUP;
+    gpio_init.Speed     = GPIO_SPEED_FREQ_HIGH;
+
+    // SCL
+    gpio_init.Pin       = (1U << bus.scl.pin);
+    gpio_init.Alternate = GetI2CAltFn(bus.scl, bus.periph);
+    HAL_GPIO_Init(GetHalPort(bus.scl), &gpio_init);
+
+    // SDA
+    gpio_init.Pin       = (1U << bus.sda.pin);
+    gpio_init.Alternate = GetI2CAltFn(bus.sda, bus.periph);
+    HAL_GPIO_Init(GetHalPort(bus.sda), &gpio_init);
+}
+
+static void DeinitI2CPins(const BusCandidate& bus)
+{
+    GPIO_TypeDef* scl_port = GetHalPort(bus.scl);
+    GPIO_TypeDef* sda_port = GetHalPort(bus.sda);
+    if(scl_port)
+        HAL_GPIO_DeInit(scl_port, (1U << bus.scl.pin));
+    if(sda_port)
+        HAL_GPIO_DeInit(sda_port, (1U << bus.sda.pin));
 }
 
 static void ScanSingleBus(const BusCandidate& bus)
@@ -91,6 +127,20 @@ static void ScanSingleBus(const BusCandidate& bus)
     hw.PrintLine("\n========================================================");
     hw.PrintLine("Probing: %s", bus.name);
     hw.PrintLine("========================================================");
+
+    // Reset peripheral state prior to init to ensure clean bus state
+    if(bus.periph == I2CHandle::Config::Peripheral::I2C_1)
+    {
+        __HAL_RCC_I2C1_FORCE_RESET();
+        System::Delay(2);
+        __HAL_RCC_I2C1_RELEASE_RESET();
+    }
+    else if(bus.periph == I2CHandle::Config::Peripheral::I2C_4)
+    {
+        __HAL_RCC_I2C4_FORCE_RESET();
+        System::Delay(2);
+        __HAL_RCC_I2C4_RELEASE_RESET();
+    }
 
     I2CHandle::Config cfg;
     cfg.periph         = bus.periph;
@@ -106,13 +156,15 @@ static void ScanSingleBus(const BusCandidate& bus)
         return;
     }
 
-    // Ensure internal pull-ups are enabled if external ones are missing
-    SetPinInternalPullup(bus.scl);
-    SetPinInternalPullup(bus.sda);
+    // Explicitly configure alternate function and pull-ups for candidate pins
+    ConfigureI2CPins(bus);
 
     System::Delay(10);
 
-    int found_count = 0;
+    int  found_count   = 0;
+    bool oled_3d_found = false;
+    bool oled_3c_found = false;
+
     hw.PrintLine("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f");
 
     for(uint8_t row = 0; row < 128; row += 16)
@@ -136,6 +188,10 @@ static void ScanSingleBus(const BusCandidate& bus)
                 {
                     pos += snprintf(line_buf + pos, sizeof(line_buf) - pos, "%02x ", addr);
                     found_count++;
+                    if(addr == 0x3D)
+                        oled_3d_found = true;
+                    else if(addr == 0x3C)
+                        oled_3c_found = true;
                 }
                 else
                 {
@@ -153,7 +209,18 @@ static void ScanSingleBus(const BusCandidate& bus)
     else
     {
         hw.PrintLine("  Result: %d device(s) detected!", found_count);
+        if(oled_3d_found)
+        {
+            hw.PrintLine("  *** [OLED MATCH] SSD1306 OLED at 0x3D (matches factory firmware!) ***");
+        }
+        if(oled_3c_found)
+        {
+            hw.PrintLine("  *** [OLED MATCH] Display responded at alternate address 0x3C! ***");
+        }
     }
+
+    // Clean up pins after scan
+    DeinitI2CPins(bus);
 }
 
 static void RunAllBusScans()
