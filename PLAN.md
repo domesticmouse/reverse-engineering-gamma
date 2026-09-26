@@ -126,16 +126,26 @@ flowchart TD
 **Goal:** Establish serial communication over USB-C and probe for the 1.3" OLED display.
 
 1. **Diagnostic Firmware Setup:**
+   - Source: [`firmware/phase1_i2c_scan/main.cpp`](firmware/phase1_i2c_scan/main.cpp)
    - Initialize Daisy Seed 2 DFM core.
    - Start USB CDC (virtual serial port) so that `printf` logs over USB-C.
-2. **I2C Bus Probing:**
-   - Probe the two hardware I2C peripherals available on standard Daisy headers:
-     - **I2C1:** SCL on pin `D11` (`PB8`), SDA on pin `D12` (`PB9`)
-     - **I2C2:** SCL on pin `D13` (`PB10`), SDA on pin `D14` (`PB11`)
-   - Perform an address sweep (`0x08` through `0x77`).
-   - Common 1.3" OLED addresses: `0x3C` or `0x3D`.
-3. **Contingency (Bit-Bang / SPI):**
-   - If not detected on default I2C pins, run a scan across remaining exposed GPIOs, or probe standard SPI buses (SPI1 / SPI2).
+   - LED heartbeat and interactive serial commands (`'s'` for manual I2C scan, `'b'` for reboot into DFU bootloader).
+
+2. **I2C Bus Probing Implementation:**
+   - Multi-candidate hardware bus scanner implemented covering:
+     - **Bus 1:** `I2C1` on `D11` (`PB8` / SCL) & `D12` (`PB9` / SDA)
+     - **Bus 2:** `I2C1` on `D13` (`PB6` / SCL) & `D14` (`PB7` / SDA)
+     - **Bus 3:** `I2C4` on `D11` (`PB8` / SCL) & `D12` (`PB9` / SDA)
+     - **Bus 4:** `I2C4` on `D13` (`PB6` / SCL) & `D14` (`PB7` / SDA)
+   - Sweeps addresses `0x08` through `0x77` in a 16x8 matrix.
+   - OLED target detection: alerts on standard addresses `0x3C` and `0x3D`.
+
+3. **Flashing & Bootloader Execution Findings:**
+   - **Initial Flash Attempt (`BOOT_QSPI`):** Successfully programmed 83,060 bytes to QSPI address `0x90040000` via `dfu-util`.
+   - **Bootloader Rejection:** The on-board Daisy Bootloader rejected direct QSPI execution (`BOOT_QSPI`), triggering the bootloader's error blink pattern on the LED while holding the OLED on the factory splash screen (`this.is.NOISE inc`).
+   - **Target Reconfiguration:** Switched build target to `APP_TYPE = BOOT_SRAM` (using `STM32H750IB_sram.lds`, entry point in fast SRAM at `0x24000000` copied from QSPI flash).
+   - **Hardware Observation:** The Daisy Seed 2 DFM module's native USB port is physically obstructed by the internal battery pack. Flashing and serial communication must use the Gamma chassis USB-C port.
+   - **Current State:** `BOOT_SRAM` firmware compiled and awaiting next flash attempt. Device is currently displaying `this.is.NOISE inc` on OLED.
 
 ---
 

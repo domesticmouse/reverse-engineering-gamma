@@ -1,1 +1,9 @@
 /backups/
+build/
+*.bin
+*.elf
+*.hex
+*.map
+*.o
+*.d
+*.lst

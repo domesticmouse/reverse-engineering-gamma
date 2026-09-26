@@ -32,8 +32,8 @@ For the detailed step-by-step plan covering software setup, non-destructive flas
 
 - [x] **Toolchain & Software:** ARM toolchain (`arm-none-eabi-gcc 15.3.1`), `dfu-util 0.11`, `make`, and serial monitors (`tio`, `minicom`, `screen`) confirmed working.
 - [x] **Submodules:** `libDaisy` and `DaisySP` linked as Git submodules and compiled.
-- [x] **Phase 0 (Baseline Verification):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Flash memory readout (`dfu-util -U`) confirmed unsupported by the Daisy Bootloader. Applications will target QSPI flash (`APP_TYPE = BOOT_QSPI`).
-- [ ] **Phase 1 (Diagnostic Console & I2C Scan):** Next step.
+- [x] **Phase 0 (Baseline Verification):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Flash memory readout (`dfu-util -U`) confirmed unsupported by the Daisy Bootloader.
+- [ ] **Phase 1 (Diagnostic Console & I2C Scan):** Diagnostic firmware developed (`firmware/phase1_i2c_scan`). Initial flash attempt with `BOOT_QSPI` was rejected by the Daisy Bootloader (error LED blinking, OLED remains on `this.is.NOISE inc` splash). Reconfigured and rebuilt for `BOOT_SRAM` (`0x24000000`). Ready for flash.
 
 ---
 
