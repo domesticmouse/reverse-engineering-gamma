@@ -28,11 +28,123 @@ For the detailed step-by-step plan covering software setup, non-destructive flas
 
 ---
 
+## Firmware Flashing
+
+The Gamma runs the **Electro-Smith Daisy Bootloader** in internal flash (`0x08000000`). Custom and diagnostic firmware binaries are flashed to external QSPI flash (`0x90040000`) and executed out of internal SRAM.
+
+### Prerequisites & Build Target
+
+* **Target Architecture:** Binaries **must** be compiled with `APP_TYPE = BOOT_SRAM` in your `Makefile`:
+  ```makefile
+  APP_TYPE = BOOT_SRAM
+  ```
+  *(The bootloader copies the binary from QSPI flash to SRAM at `0x24000000`. Do not use `BOOT_QSPI` or `BOOT_NONE`; the Daisy Bootloader will reject the binary and show an SOS LED blink error).*
+* **QSPI Flash Address:** `0x90040000`
+
+### Method 1: Automated Polling (Recommended)
+
+Because the Daisy Bootloader's DFU window lasts ~2.5 seconds after a reset, using the automated Python helper avoids timing races:
+
+```bash
+# Flash the latest binary built under firmware/:
+python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py
+
+# Or specify a custom binary:
+python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py firmware/phase1_i2c_scan/build/phase1_i2c_scan.bin
+```
+
+1. Run the script (it verifies that the vector table targets SRAM `0x24000000` and begins polling `dfu-util`).
+2. Press the **RESET** button on the Daisy Seed (or power-cycle the unit).
+3. The script automatically catches the DFU device (`0483:df11`), flashes to `0x90040000:leave`, and reboots into the new firmware.
+
+### Method 2: Manual Terminal Flashing (`dfu-util`)
+
+1. Build your firmware:
+   ```bash
+   make clean && make
+   ```
+2. Put the Daisy Seed into bootloader mode:
+   - Hold **BOOT**, press and release **RESET**, then release **BOOT** (or tap **BOOT** during startup to extend bootloader mode).
+3. Check that the bootloader is detected:
+   ```bash
+   dfu-util -l
+   ```
+   *(Expected: `Found DFU: [0483:df11] ... Product: "Daisy Bootloader" (Electrosmith)`)*
+4. Flash the binary to QSPI flash:
+   ```bash
+   dfu-util -a 0 -s 0x90040000:leave -D build/<firmware_name>.bin
+   ```
+   > [!NOTE]
+   > A `dfu-util: Error during download get_status` / exit code `74` message upon `:leave` is normal; the MCU resets immediately upon flashing completion before the final USB query can complete.
+
+### Serial Output Verification
+
+For diagnostic firmware with USB serial logging enabled:
+```bash
+tio /dev/cu.usbmodem*
+# or
+screen /dev/cu.usbmodem* 115200
+```
+
+---
+
+## Restoring Factory Firmware
+
+If custom firmware halts, crashes, or you want to return the synthesizer to stock factory operation, you can restore the official firmware image (`gamma-v2.0.3.bin`).
+
+### Method 1: Automated CLI Restore (Recommended)
+
+Run the automated restore script:
+```bash
+python3 .agents/skills/gamma-firmware-restore/scripts/restore_firmware.py
+```
+
+1. The script verifies or downloads the official `gamma-v2.0.3.bin` into `backups/` and begins polling for DFU.
+2. Tap the **RESET** button on the Daisy Seed (or hold **BOOT**, tap **RESET**, release **BOOT**).
+3. The script flashes the factory binary to `0x90040000:leave`.
+4. The Gamma reboots into the official synthesizer firmware.
+
+### Method 2: Manual Terminal Flash (`dfu-util`)
+
+1. Ensure the factory binary is present:
+   ```bash
+   # Already cached in repository:
+   ls -lh backups/gamma-v2.0.3.bin
+   ```
+   *(If needed, download directly: `curl -L -o backups/gamma-v2.0.3.bin https://gammaupdatetool.netlify.app/data/gamma-v2.0.3.bin`)*
+2. Put the device into bootloader mode (Hold **BOOT**, tap **RESET**, release **BOOT**).
+3. Flash the stock binary:
+   ```bash
+   dfu-util -a 0 -s 0x90040000:leave -D backups/gamma-v2.0.3.bin
+   ```
+
+### Method 3: Browser Web Recovery
+
+If you prefer using a web browser:
+1. Navigate to the official [Gamma Update Tool](https://gammaupdatetool.netlify.app/).
+2. Expand **Troubleshooting** $\rightarrow$ **"Can't Enter Boot"**.
+3. Click **"Connect & Install"**.
+4. Power cycle or tap **RESET** on the Gamma.
+5. Within the ~2-second boot window, select **"Daisy Bootloader"** and click **Connect**.
+6. The web updater will reflash the factory firmware.
+
+### Post-Restore Verification
+
+Verify that the Gamma enumerates as a USB MIDI/audio device:
+```bash
+# macOS USB enumeration check:
+ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
+```
+* The device will enumerate with `kUSBProductString` = `"Gamma"` (`0483:5740`).
+* The 1.3" OLED will display the active Gamma synthesizer interface.
+
+---
+
 ## Skills & Runbooks
 
 Operational runbooks and automated tooling are maintained as workspace skills:
-* **[Gamma Firmware Flashing](.agents/skills/gamma-firmware-flash/SKILL.md)**: Build, validate, and flash custom/diagnostic firmware targeting `BOOT_SRAM` (`0x24000000`) over USB DFU with automated bootloader polling.
-* **[Gamma Firmware Restore](.agents/skills/gamma-firmware-restore/SKILL.md)**: 1-click unbrick and factory firmware recovery (`gamma-v2.0.3.bin`) via USB DFU.
+* **[Gamma Firmware Flashing](.agents/skills/gamma-firmware-flash/SKILL.md)**: Detailed runbook and automated polling script (`flash_firmware.py`).
+* **[Gamma Firmware Restore](.agents/skills/gamma-firmware-restore/SKILL.md)**: Detailed runbook and automated restore script (`restore_firmware.py`).
 
 ---
 
