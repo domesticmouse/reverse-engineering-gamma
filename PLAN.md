@@ -67,15 +67,18 @@ The core HAL and DSP libraries for the Daisy Seed 2 DFM:
 
 ## 2. Hardware Inventory & Daisy Seed 2 DFM Target
 
+The complete pin mapping, electrical specifications, and peripheral configurations have been moved to the dedicated skill:
+👉 **[Gamma Hardware Pinout & Peripheral Reference](.agents/skills/gamma-pinout/SKILL.md)** (with C++ header [`gamma_pins.h`](.agents/skills/gamma-pinout/resources/gamma_pins.h))
+
 | Component | Description | Confirmed Hardware Interface / Pinout | Status |
 | :--- | :--- | :--- | :--- |
-| **OLED Display** | 1.3" display (SSD1306 controller, 128x64) | **I2C1** (SCL: `seed::D11` / `PB8`, SDA: `seed::D12` / `PB9`) @ **`0x3D`** | **Verified on Hardware** |
-| **Potentiometers** | 4 rotary knobs (Chords Vol/Filter, Notes Vol/Filter) | 4 ADC channels (active high w/ `1.0 - raw` software inversion):<br>• Knob 0 (Chord Vol): `seed::D18` (`PA7` / `A3`)<br>• Knob 1 (Chord Filter): `seed::D17` (`PB1` / `A2`)<br>• Knob 2 (Notes Vol): `seed::D19` (`PA6` / `A4`)<br>• Knob 3 (Notes Filter): `seed::D20` (`PC1` / `A5`) | **Verified on Hardware** |
-| **Thumbsticks** | 2 analog joysticks (Left X/Y, Right X/Y) | 4 ADC channels:<br>• **Left Stick X (LX):** `seed::D22` (`PA5` / `A7`) — Left=0%, Right=100%<br>• **Left Stick Y (LY):** `seed::D21` (`PC4` / `A6`) — Down=0%, Up=100% (`1.0 - raw`)<br>• **Right Stick X (RX):** `seed::D24` (`PA1` / `A9`) — Left=0%, Right=100% (`1.0 - raw`)<br>• **Right Stick Y (RY):** `seed::D23` (`PA4` / `A8`) — Down=0%, Up=100% (`1.0 - raw`) | **Verified on Hardware** |
+| **OLED Display** | 1.3" display (SSD1306 controller, 128x64) | `I2C1` (SCL: `seed::D11` / `PB8`, SDA: `seed::D12` / `PB9`) @ `0x3D` | **Verified on Hardware** |
+| **Potentiometers** | 4 rotary knobs (Chords Vol/Filter, Notes Vol/Filter) | 4 ADC channels (`seed::D18`, `D17`, `D19`, `D20` / `A3`, `A2`, `A4`, `A5`) | **Verified on Hardware** |
+| **Thumbsticks** | 2 analog joysticks (Left X/Y, Right X/Y) | 4 ADC channels (`seed::D22`, `D21`, `D24`, `D23` / `A7`, `A6`, `A9`, `A8`) | **Verified on Hardware** |
 | **Aux ADC** | Internal / Battery / Aux sensor | 1 ADC channel: `seed::D31` (`PC2`/`A12`) | **Confirmed via Disassembly** |
-| **14 Keys** | 14 tactile low-profile switches (7 chord, 7 note) | 14 discrete GPIO inputs w/ internal pullups:<br>• Chord keys: `D8` (`PG11`), `D9` (`PB4`), `D10` (`PB5`), `D13` (`PB6`), `D14` (`PB7`), `D26` (`PD11`), `D27` (`PG9`)<br>• Note keys: `D1` (`PC11`), `D2` (`PC10`), `D3` (`PC9`), `D4` (`PC8`), `D5` (`PD2`), `D6` (`PC12`), `D7` (`PG10`) | **Confirmed via Disassembly** |
-| **Rotary Encoder** | 1 rotary dial w/ push switch (scale/key selection) | • Phase A: `seed::D15` (`PC0`)<br>• Phase B: `seed::D16` (`PA3`)<br>• Push Switch: `seed::D28` (`PA2`, active low w/ pullup) | **Confirmed via Disassembly** |
-| **Board Rail / Aux** | Grounding rail & auxiliary input | • `PC3`: Output LOW (`0`)<br>• `seed::D0` (`PB12`): Input Pullup | **Confirmed via Disassembly** |
+| **14 Keys** | 14 tactile low-profile switches (7 chord, 7 note) | 14 discrete GPIO inputs w/ internal pullups (`seed::D1`–`D10`, `D13`, `D14`, `D26`, `D27`) | **Confirmed via Disassembly** |
+| **Rotary Encoder** | 1 rotary dial w/ push switch (scale/key selection) | Phase A (`D15`), Phase B (`D16`), Push Switch (`D28`) | **Confirmed via Disassembly** |
+| **Board Rail / Aux** | Grounding rail & auxiliary input | `PC3`: Output LOW (`0`), `seed::D0` (`PB12`): Input Pullup | **Confirmed via Disassembly** |
 | **Audio Output** | 3.5mm stereo headphone jack | On-board PCM3060 codec via SAI | Internal Daisy routing |
 | **MIDI Output** | 3.5mm TRS MIDI Out | Hardware UART TX @ 31,250 baud | In progress |
 | **USB-C** | Power, flashing (DFU), USB Serial/MIDI | STM32 USB OTG FS (`vbus_sensing_enable = DISABLE`) | **Verified on Hardware** |
@@ -241,20 +244,11 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
 **Goal:** Verify and calibrate the 4 knobs and 2 joysticks (4 axes) using live on-screen visual bargraphs and USB serial.
 
 1. **Hardware Pin Mapping (Hardware Verified):**
-   - **4 Rotary Potentiometers (Across the Top, Left-to-Right):**
-     - **Knob 0 (Chord Vol):** `seed::D18` (`PA7` / `ADC1_INP7` / `A3`) — **Hardware Verified**
-     - **Knob 1 (Chord Filter):** `seed::D17` (`PB1` / `ADC1_INP5` / `A2`) — **Hardware Verified**
-     - **Knob 2 (Notes Vol):** `seed::D19` (`PA6` / `ADC1_INP3` / `A4`) — **Hardware Verified**
-     - **Knob 3 (Notes Filter):** `seed::D20` (`PC1` / `ADC1_INP11` / `A5`) — **Hardware Verified**
-     - *Polarity note:* Potentiometer wipers sweep 3.3V (CCW) to 0V (CW). Inverted in software (`1.0 - raw`) so 0% = full CCW and 100% = full CW.
-   - **2 Dual-Axis Joysticks (4 Axes) — Hardware Verified:**
-     - **Left Stick X (LX):** `seed::D22` (`PA5` / `ADC1_INP19` / `A7`) $\rightarrow$ Left = 0%, Right = 100% (Standard)
-     - **Left Stick Y (LY):** `seed::D21` (`PC4` / `ADC1_INP4` / `A6`) $\rightarrow$ Down = 0%, Up = 100% (Inverted via `1.0 - raw`)
-     - **Right Stick X (RX):** `seed::D24` (`PA1` / `ADC1_INP17` / `A9`) $\rightarrow$ Left = 0%, Right = 100% (Inverted via `1.0 - raw`)
-     - **Right Stick Y (RY):** `seed::D23` (`PA4` / `ADC1_INP18` / `A8`) $\rightarrow$ Down = 0%, Up = 100% (Inverted via `1.0 - raw`)
-     - *Hardware Polarity Rationale:* Both joystick gimbals share identical Y-axis orientation relative to VCC/GND. However, the X-axis on the Right stick is electrically reversed relative to the Left stick. This is standard PCB design practice on dual-joystick layouts: reversing 3.3V and GND on one potentiometer simplifies PCB trace fanout and ground plane continuity without adding via hops, as inversion is handled in software.
-   - **Auxiliary ADC:**
-     - `AUX`: `seed::D31` (`PC2` / `ADC1_INP12`)
+   - Detailed pinout, electrical characteristics, and ADC formulas are documented in:
+     👉 **[Gamma Hardware Pinout & Peripheral Reference](.agents/skills/gamma-pinout/SKILL.md)**
+   - **4 Rotary Potentiometers:** `K0` (`D18` / `PA7`), `K1` (`D17` / `PB1`), `K2` (`D19` / `PA6`), `K3` (`D20` / `PC1`). Sweeps 3.3V (CCW) to 0V (CW); inverted in software (`1.0 - raw`).
+   - **2 Joysticks (4 Axes):** `LX` (`D22` / `PA5`, direct), `LY` (`D21` / `PC4`, inverted), `RX` (`D24` / `PA1`, inverted), `RY` (`D23` / `PA4`, inverted).
+   - **Auxiliary ADC:** `AUX` (`D31` / `PC2`).
 
 2. **Phase 3 Diagnostic Firmware:**
    - Source: [`firmware/phase3_adc/main.cpp`](firmware/phase3_adc/main.cpp)
@@ -277,35 +271,16 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
 **Goal:** Confirm physical key layout and rotary encoder quadrature behavior.
 
 1. **Hardware Pin Mapping & Physical Layout (100% Hardware Verified):**
-   - **Left Keypad (7 Note Keys, Active-Low with Pull-up):**
-     - Top row (left-to-right):
-       - `N1`: `seed::D1` (`PC11`)
-       - `N2`: `seed::D2` (`PC10`)
-       - `N3`: `seed::D3` (`PC9`)
-       - `N4`: `seed::D4` (`PC8`)
-     - Bottom row (left-to-right):
-       - `N5`: `seed::D5` (`PD2`)
-       - `N6`: `seed::D6` (`PC12`)
-       - `N7`: `seed::D7` (`PG10`)
-   - **Right Keypad (7 Chord Keys, Active-Low with Pull-up):**
-     - Top row (left-to-right):
-       - `C1`: `seed::D8` (`PG11`)
-       - `C2`: `seed::D9` (`PB4`)
-       - `C3`: `seed::D10` (`PB5`)
-       - `C4`: `seed::D13` (`PB6`)
-     - Bottom row (left-to-right):
-       - `C5`: `seed::D14` (`PB7`)
-       - `C6`: `seed::D26` (`PD11`)
-       - `C7`: `seed::D27` (`PG9`)
-   - **Rotary Encoder with Push Switch (100% Hardware Verified):**
-     - **Phase A:** `seed::D15` (`PC0`, input pull-up)
-     - **Phase B:** `seed::D16` (`PA3`, input pull-up)
-     - **Push Switch:** `seed::D28` (`PA2`, active-low input pull-up) $\rightarrow$ Displays `CLICK`
-     - **Quadrature Detent Resolution:** Standard mechanical encoder generating 4 Gray code edge transitions per detent click.
-     - **Timing Requirement:** Must be sampled via a high-frequency jitter-free interrupt (e.g., 1 kHz hardware timer `TIM5` or audio DMA callback). Software polling in the main loop misses pulses whenever I2C display updates block execution (~23 ms per frame).
-   - **Auxiliary Pins (Factory Initialization):**
-     - `PC3`: Configured as Output and driven `LOW` (`0`).
-     - `seed::D0` (`PB12`): Configured as Input with pull-up.
+   - Detailed keypad matrices, quadrature timing, and auxiliary pin behaviors are documented in:
+     👉 **[Gamma Hardware Pinout & Peripheral Reference](.agents/skills/gamma-pinout/SKILL.md)**
+   - **Left Keypad (7 Note Keys, Active-Low w/ Pull-up):**
+     - Top row: `N1`–`N4` (`D1`–`D4` / `PC11`, `PC10`, `PC9`, `PC8`)
+     - Bottom row: `N5`–`N7` (`D5`–`D7` / `PD2`, `PC12`, `PG10`)
+   - **Right Keypad (7 Chord Keys, Active-Low w/ Pull-up):**
+     - Top row: `C1`–`C4` (`D8`–`D10`, `D13` / `PG11`, `PB4`, `PB5`, `PB6`)
+     - Bottom row: `C5`–`C7` (`D14`, `D26`, `D27` / `PB7`, `PD11`, `PG9`)
+   - **Rotary Encoder with Push Switch:** Phase A (`D15` / `PC0`), Phase B (`D16` / `PA3`), Click (`D28` / `PA2`). Standard mechanical encoder with 4 Gray code transitions per detent click. Requires high-frequency sampling (timer / audio DMA) to avoid missed ticks during I2C display updates.
+   - **Auxiliary Pins:** `PC3` (Output LOW), `seed::D0` (`PB12`, Input pull-up).
 
 2. **Dedicated Diagnostic Firmware:**
    - Source: [`firmware/phase4_keys_encoder/main.cpp`](firmware/phase4_keys_encoder/main.cpp)

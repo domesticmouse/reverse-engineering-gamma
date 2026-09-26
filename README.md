@@ -142,7 +142,8 @@ ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
 
 ## Skills & Runbooks
 
-Operational runbooks and automated tooling are maintained as workspace skills:
+Operational runbooks, hardware specifications, and automated tooling are maintained as workspace skills:
+* **[Gamma Hardware Pinout & Peripheral Reference](.agents/skills/gamma-pinout/SKILL.md)**: Master pin mappings, electrical characteristics, ADC formulas, and C++ header.
 * **[Gamma Firmware Flashing](.agents/skills/gamma-firmware-flash/SKILL.md)**: Detailed runbook and automated polling script (`flash_firmware.py`).
 * **[Gamma Firmware Restore](.agents/skills/gamma-firmware-restore/SKILL.md)**: Detailed runbook and automated restore script (`restore_firmware.py`).
 
