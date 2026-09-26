@@ -28,11 +28,20 @@ For the detailed step-by-step plan covering software setup, non-destructive flas
 
 ---
 
+## Project Status
+
+- [x] **Toolchain & Software:** ARM toolchain (`arm-none-eabi-gcc 15.3.1`), `dfu-util 0.11`, `make`, and serial monitors (`tio`, `minicom`, `screen`) confirmed working.
+- [x] **Submodules:** `libDaisy` and `DaisySP` linked as Git submodules and compiled.
+- [x] **Phase 0 (Baseline Verification):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Flash memory readout (`dfu-util -U`) confirmed unsupported by the Daisy Bootloader. Applications will target QSPI flash (`APP_TYPE = BOOT_QSPI`).
+- [ ] **Phase 1 (Diagnostic Console & I2C Scan):** Next step.
+
+---
+
 ## Helpful Resources & Links
 
 ### Hardware & Manufacturer
-* [this.is.NOISE inc. Gamma Mini Synth Product Page](https://thisisnoiseinc.com/products/gamma-mini-synth-aluminum)
-* [this.is.NOISE Gamma Resources & Web Update Tool](https://thisisnoise.com/pages/gamma-resources)
+* [this.is.NOISE inc. Official Site](https://thisisnoiseinc.com)
+* [this.is.NOISE inc. Gamma Product Page](https://thisisnoiseinc.com/pages/gamma)
 
 ### Daisy Seed & Embedded Platform
 * [Electro-Smith Daisy Seed 2 DFM](https://daisy.audio/pages/daisy-seed2-dfm)

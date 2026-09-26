@@ -59,10 +59,9 @@ Reads real-time diagnostic output transmitted from the Daisy over USB CDC (Virtu
 
 ### E. Electro-Smith Daisy Repositories
 The core HAL and DSP libraries for the Daisy Seed 2 DFM:
-* **libDaisy:** [https://github.com/electro-smith/libDaisy](https://github.com/electro-smith/libDaisy)
-  - Hardware abstraction layer for GPIO, ADC, I2C, SPI, USB, and audio DMA.
-* **DaisySP:** [https://github.com/electro-smith/DaisySP](https://github.com/electro-smith/DaisySP)
-  - DSP synthesis library (oscillators, filters, envelopes).
+
+  - `libDaisy`: [libDaisy/](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/libDaisy) (Hardware abstraction layer; builds `build/libdaisy.a`)
+  - `DaisySP`: [DaisySP/](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP) (DSP synthesis library; builds `build/libdaisysp.a`)
 
 ---
 
@@ -101,21 +100,25 @@ flowchart TD
 **Goal:** Verify communication over USB-C and attempt to back up the factory firmware before any overwrite.
 
 1. **Boot into DFU Mode:**
-   - Put the Daisy into system bootloader mode (typically hold `BOOT`, tap `RESET`, release `BOOT`).
+   - Put the Daisy into system bootloader mode (hold `BOOT`, tap `RESET`, release `BOOT`).
    - Query USB DFU status:
      ```bash
      dfu-util -l
      ```
-2. **Attempt Memory Dump:**
-   - If STM32 Readout Protection (RDP) is at Level 0, dump internal flash (128 KB) and external QSPI flash (8 MB):
-     ```bash
-     # Internal Flash (128 KB)
-     dfu-util -a 0 -s 0x08000000:0x20000 -U gamma_internal_flash_backup.bin
-
-     # External QSPI Flash (8 MB)
-     dfu-util -a 0 -s 0x90000000:0x800000 -U gamma_qspi_flash_backup.bin
+   - **Result (Verified):** The Gamma was successfully detected:
+     ```text
+     Found DFU: [0483:df11] ver=0200, devnum=1, cfg=1, intf=0, path="1-1", alt=0, name="@Flash /0x90000000/64*4Kg/0x90040000/60*64Kg/0x90400000/60*64Kg", serial="3067366D3433"
+     Product: "Daisy Bootloader" (Electrosmith)
      ```
-   - *Note:* If RDP Level 1 is enabled, read attempts will be rejected by the chip. In that case, verify that you can reinstall factory firmware via the official [this.is.NOISE Web Update Tool](https://thisisnoise.com/pages/gamma-resources).
+   - Programs are stored in QSPI flash starting at `0x90040000` (compiled with `APP_TYPE = BOOT_QSPI`).
+
+2. **Attempt Memory Dump:**
+   - Attempted memory read via `dfu-util -U`:
+     ```bash
+     dfu-util -a 0 -s 0x90000000:0x800000 -U backups/gamma_qspi_flash_backup.bin
+     ```
+   - **Result:** Failed with `LIBUSB_ERROR_PIPE` (`dfuse_upload: libusb_control_transfer returned -9`). The Electro-Smith Daisy Bootloader does not implement DFU upload (readout), or chip Readout Protection (RDP) is active.
+   - **Factory Firmware Restore Path:** Confirmed official web updates and firmware tools are hosted at [thisisnoiseinc.com](https://thisisnoiseinc.com) via their Web Update Tool.
 
 ---
 
