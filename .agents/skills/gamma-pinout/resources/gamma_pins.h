@@ -2,7 +2,7 @@
 
 #include "daisy_seed.h"
 
-namespace gamma
+namespace gamma_pins
 {
 
 // ============================================================================
@@ -159,4 +159,4 @@ namespace system_pins
     constexpr daisy::Pin pin_aux_in   = daisy::seed::D0;            // PB12: Input Pull-up
 }
 
-} // namespace gamma
+} // namespace gamma_pins
