@@ -1,5 +1,6 @@
 #include "daisy_seed.h"
 #include "daisysp.h"
+#include "gamma_pins.h"
 #include "dev/oled_ssd130x.h"
 #include "util/oled_fonts.h"
 #include <cstdio>
@@ -48,58 +49,9 @@ static void DrawFillRect(int x0, int y0, int x1, int y1, bool on)
 }
 
 // ========================================================================
-// Hardware Pin Definitions (Verified in Phases 1-4)
+// Hardware Pin Definitions & Config (Imported from gamma_pins.h)
 // ========================================================================
-// 7 Note Keys (Left: N1-N4 top, N5-N7 bottom)
-static const Pin kNotePins[7] = {
-    seed::D1, // N1: PC11
-    seed::D2, // N2: PC10
-    seed::D3, // N3: PC9
-    seed::D4, // N4: PC8
-    seed::D5, // N5: PD2
-    seed::D6, // N6: PC12
-    seed::D7, // N7: PG10
-};
-
-// 7 Chord Keys (Right: C1-C4 top, C5-C7 bottom)
-static const Pin kChordPins[7] = {
-    seed::D8,  // C1: PG11
-    seed::D9,  // C2: PB4
-    seed::D10, // C3: PB5
-    seed::D13, // C4: PB6
-    seed::D14, // C5: PB7
-    seed::D26, // C6: PD11
-    seed::D27, // C7: PG9
-};
-
-// Rotary Encoder
-static const Pin kEncPinA  = seed::D15; // PC0
-static const Pin kEncPinB  = seed::D16; // PA3
-static const Pin kEncClick = seed::D28; // PA2
-
-// 4 Potentiometers (Across Top, Left-to-Right)
-static const Pin kKnobPins[4] = {
-    seed::D18, // K0: Chord Vol    (PA7 / A3)
-    seed::D17, // K1: Chord Filter (PB1 / A2)
-    seed::D19, // K2: Notes Vol    (PA6 / A4)
-    seed::D20, // K3: Notes Filter (PC1 / A5)
-};
-
-// 4 Joystick Axes (Left Stick X/Y, Right Stick X/Y)
-static const Pin kStickPins[4] = {
-    seed::D22, // J0 (LX): PA5 (A7) [Standard: Left=0, Right=1]
-    seed::D21, // J1 (LY): PC4 (A6) [Inverted: Down=0, Up=1]
-    seed::D24, // J2 (RX): PA1 (A9) [Inverted: Left=0, Right=1]
-    seed::D23, // J3 (RY): PA4 (A8) [Inverted: Down=0, Up=1]
-};
-
-static const Pin kAuxPin = seed::D31; // PC2 / ADC1_INP12
-
-// Grounding / Aux
-static const Pin kAuxOutLow = Pin(PORTC, 3); // PC3 (Output LOW)
-static const Pin kAuxInPull = seed::D0;      // PB12 (Input Pull-up)
-
-#define NUM_ADC_CHANNELS 9
+constexpr size_t NUM_ADC_CHANNELS = gamma_pins::knobs::COUNT + gamma_pins::joysticks::COUNT + 1;
 
 // ========================================================================
 // Musical Tuning & Chord Tables
@@ -186,8 +138,8 @@ static volatile float g_peak_right = 0.0f;
 // ========================================================================
 // Controls & Physical Hardware Objects
 // ========================================================================
-static Switch      g_note_keys[7];
-static Switch      g_chord_keys[7];
+static Switch      g_note_keys[gamma_pins::note_keys::COUNT];
+static Switch      g_chord_keys[gamma_pins::chord_keys::COUNT];
 static Encoder     g_encoder;
 static GPIO        g_enc_gpio_a;
 static GPIO        g_enc_gpio_b;
@@ -200,8 +152,8 @@ static volatile uint8_t  g_raw_a           = 1;
 static volatile uint8_t  g_raw_b           = 1;
 static volatile uint32_t g_enc_transitions = 0;
 
-static float g_knobs[4]  = {0.5f, 0.5f, 0.5f, 0.5f};
-static float g_sticks[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+static float g_knobs[gamma_pins::knobs::COUNT]       = {0.5f, 0.5f, 0.5f, 0.5f};
+static float g_sticks[gamma_pins::joysticks::COUNT] = {0.5f, 0.5f, 0.5f, 0.5f};
 
 static char     g_last_event[36]  = "Ready - Audio Active";
 static uint32_t g_last_event_time = 0;
@@ -306,17 +258,17 @@ void AudioCallback(AudioHandle::InputBuffer in,
                    size_t size)
 {
     // Fast parameter read
-    float chord_vol = g_knobs[0]; // K0
-    float note_vol  = g_knobs[2]; // K2
+    float chord_vol = g_knobs[gamma_pins::knobs::CHORD_VOL];
+    float note_vol  = g_knobs[gamma_pins::knobs::NOTES_VOL];
 
     // Filter cutoffs (logarithmic mapping: 100 Hz to 14,000 Hz)
-    float chord_cutoff = 100.0f * powf(140.0f, g_knobs[1]);
-    float note_cutoff  = 100.0f * powf(140.0f, g_knobs[3]);
+    float chord_cutoff = 100.0f * powf(140.0f, g_knobs[gamma_pins::knobs::CHORD_FILTER]);
+    float note_cutoff  = 100.0f * powf(140.0f, g_knobs[gamma_pins::knobs::NOTES_FILTER]);
 
     // LY: Filter resonance (0.05 to 0.75)
-    float res = 0.05f + g_sticks[1] * 0.70f;
+    float res = 0.05f + g_sticks[gamma_pins::joysticks::LEFT_Y] * 0.70f;
     // RX: Stereo pan (0.0 = full left, 1.0 = full right)
-    float pan_r = g_sticks[2];
+    float pan_r = g_sticks[gamma_pins::joysticks::RIGHT_X];
     float pan_l = 1.0f - pan_r;
 
     g_note_filter.SetFreq(note_cutoff);
@@ -372,9 +324,9 @@ void AudioCallback(AudioHandle::InputBuffer in,
             // Knob 0 channel routing:
             // 0..0.35: Left only, 0.35..0.65: Both, 0.65..1.0: Right only
             float ch_l = 1.0f, ch_r = 1.0f;
-            if(g_knobs[0] < 0.35f) {
+            if(g_knobs[gamma_pins::knobs::CHORD_VOL] < 0.35f) {
                 ch_r = 0.0f;
-            } else if(g_knobs[0] > 0.65f) {
+            } else if(g_knobs[gamma_pins::knobs::CHORD_VOL] > 0.65f) {
                 ch_l = 0.0f;
             }
             out_l = SoftSaturate(tone_sig * ch_l);
@@ -418,12 +370,12 @@ static void InitOled()
     HAL_GPIO_Init(GPIOB, &gpio_init);
 
     MyOled::Config disp_cfg;
-    disp_cfg.driver_config.transport_config.i2c_address               = 0x3D;
+    disp_cfg.driver_config.transport_config.i2c_address               = gamma_pins::display::i2c_address;
     disp_cfg.driver_config.transport_config.i2c_config.periph         = I2CHandle::Config::Peripheral::I2C_1;
     disp_cfg.driver_config.transport_config.i2c_config.speed          = I2CHandle::Config::Speed::I2C_400KHZ;
     disp_cfg.driver_config.transport_config.i2c_config.mode           = I2CHandle::Config::Mode::I2C_MASTER;
-    disp_cfg.driver_config.transport_config.i2c_config.pin_config.scl = seed::D11;
-    disp_cfg.driver_config.transport_config.i2c_config.pin_config.sda = seed::D12;
+    disp_cfg.driver_config.transport_config.i2c_config.pin_config.scl = gamma_pins::display::pin_scl;
+    disp_cfg.driver_config.transport_config.i2c_config.pin_config.sda = gamma_pins::display::pin_sda;
     oled.Init(disp_cfg);
     g_oled_active = true;
 }
@@ -482,18 +434,18 @@ static void UpdateScreen()
             snprintf(line_buf, sizeof(line_buf), "Note:%-2s (%3dHz) V:%2d%%",
                      kNoteNames[g_active_note_idx],
                      (int)kNoteFreqs[g_active_note_idx],
-                     (int)(g_knobs[2] * 99.0f));
+                     (int)(g_knobs[gamma_pins::knobs::NOTES_VOL] * 99.0f));
         else
-            snprintf(line_buf, sizeof(line_buf), "Note:--          V:%2d%%", (int)(g_knobs[2] * 99.0f));
+            snprintf(line_buf, sizeof(line_buf), "Note:--          V:%2d%%", (int)(g_knobs[gamma_pins::knobs::NOTES_VOL] * 99.0f));
         oled.WriteString(line_buf, Font_6x8, true);
 
         oled.SetCursor(0, 34);
         if(g_active_chord_idx >= 0)
             snprintf(line_buf, sizeof(line_buf), "Chrd:%-5s     V:%2d%%",
                      kChords[g_active_chord_idx].name,
-                     (int)(g_knobs[0] * 99.0f));
+                     (int)(g_knobs[gamma_pins::knobs::CHORD_VOL] * 99.0f));
         else
-            snprintf(line_buf, sizeof(line_buf), "Chrd:--          V:%2d%%", (int)(g_knobs[0] * 99.0f));
+            snprintf(line_buf, sizeof(line_buf), "Chrd:--          V:%2d%%", (int)(g_knobs[gamma_pins::knobs::CHORD_VOL] * 99.0f));
         oled.WriteString(line_buf, Font_6x8, true);
     }
     else // MODE_TEST_TONE
@@ -504,8 +456,8 @@ static void UpdateScreen()
 
         oled.SetCursor(0, 34);
         const char* route = "STEREO (L+R)";
-        if(g_knobs[0] < 0.35f) route = "LEFT ONLY";
-        else if(g_knobs[0] > 0.65f) route = "RIGHT ONLY";
+        if(g_knobs[gamma_pins::knobs::CHORD_VOL] < 0.35f) route = "LEFT ONLY";
+        else if(g_knobs[gamma_pins::knobs::CHORD_VOL] > 0.65f) route = "RIGHT ONLY";
         snprintf(line_buf, sizeof(line_buf), "Chan: %-12s", route);
         oled.WriteString(line_buf, Font_6x8, true);
     }
@@ -513,9 +465,9 @@ static void UpdateScreen()
     // Row 4: Knobs & Filters
     oled.SetCursor(0, 45);
     snprintf(line_buf, sizeof(line_buf), "CF:%d%% NF:%d%% Pan:%s",
-             (int)(g_knobs[1] * 99.0f),
-             (int)(g_knobs[3] * 99.0f),
-             g_sticks[2] < 0.4f ? "L" : (g_sticks[2] > 0.6f ? "R" : "C"));
+             (int)(g_knobs[gamma_pins::knobs::CHORD_FILTER] * 99.0f),
+             (int)(g_knobs[gamma_pins::knobs::NOTES_FILTER] * 99.0f),
+             g_sticks[gamma_pins::joysticks::RIGHT_X] < 0.4f ? "L" : (g_sticks[gamma_pins::joysticks::RIGHT_X] > 0.6f ? "R" : "C"));
     oled.WriteString(line_buf, Font_6x8, true);
 
     DrawLineH(0, 127, 54, true);
@@ -556,21 +508,23 @@ int main(void)
     InitOled();
 
     // 4. Initialize Board Rail / Aux Pins
-    g_aux_low.Init(kAuxOutLow, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
+    g_aux_low.Init(gamma_pins::system_pins::pin_rail_low, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
     g_aux_low.Write(false); // Drive PC3 LOW
-    g_aux_pull.Init(kAuxInPull, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+    g_aux_pull.Init(gamma_pins::system_pins::pin_aux_in, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
     // 5. Initialize 14 Key Switches
-    for(int i = 0; i < 7; i++)
-    {
-        g_chord_keys[i].Init(kChordPins[i], 1000.0f);
-        g_note_keys[i].Init(kNotePins[i], 1000.0f);
-    }
+    for(int i = 0; i < gamma_pins::chord_keys::COUNT; i++)
+        g_chord_keys[i].Init(gamma_pins::chord_keys::pins[i], 1000.0f);
+    for(int i = 0; i < gamma_pins::note_keys::COUNT; i++)
+        g_note_keys[i].Init(gamma_pins::note_keys::pins[i], 1000.0f);
 
     // 6. Initialize Rotary Encoder
-    g_enc_gpio_a.Init(kEncPinA, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
-    g_enc_gpio_b.Init(kEncPinB, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
-    g_encoder.Init(kEncPinA, kEncPinB, kEncClick, 1000.0f);
+    g_enc_gpio_a.Init(gamma_pins::encoder::pin_a, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+    g_enc_gpio_b.Init(gamma_pins::encoder::pin_b, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+    g_encoder.Init(gamma_pins::encoder::pin_a,
+                   gamma_pins::encoder::pin_b,
+                   gamma_pins::encoder::pin_click,
+                   1000.0f);
 
     // 7. Start 1 kHz Hardware Timer for Encoder
     TimerHandle::Config tim_cfg;
@@ -583,17 +537,13 @@ int main(void)
     g_timer.SetCallback(TimerCallback, nullptr);
     g_timer.Start();
 
-    // 8. Initialize ADC (9 Channels: 4 Knobs, 4 Joysticks, 1 Aux)
+    // 8. Initialize ADC (4 Knobs, 4 Joysticks, 1 Aux)
     AdcChannelConfig adc_cfg[NUM_ADC_CHANNELS];
-    adc_cfg[0].InitSingle(kKnobPins[0]);
-    adc_cfg[1].InitSingle(kKnobPins[1]);
-    adc_cfg[2].InitSingle(kKnobPins[2]);
-    adc_cfg[3].InitSingle(kKnobPins[3]);
-    adc_cfg[4].InitSingle(kStickPins[0]);
-    adc_cfg[5].InitSingle(kStickPins[1]);
-    adc_cfg[6].InitSingle(kStickPins[2]);
-    adc_cfg[7].InitSingle(kStickPins[3]);
-    adc_cfg[8].InitSingle(kAuxPin);
+    for(int i = 0; i < gamma_pins::knobs::COUNT; i++)
+        adc_cfg[i].InitSingle(gamma_pins::knobs::pins[i]);
+    for(int i = 0; i < gamma_pins::joysticks::COUNT; i++)
+        adc_cfg[gamma_pins::knobs::COUNT + i].InitSingle(gamma_pins::joysticks::pins[i]);
+    adc_cfg[gamma_pins::knobs::COUNT + gamma_pins::joysticks::COUNT].InitSingle(gamma_pins::aux_adc::pin);
     hw.adc.Init(adc_cfg, NUM_ADC_CHANNELS);
     hw.adc.Start();
 
@@ -637,17 +587,21 @@ int main(void)
         uint32_t now = System::GetNow();
 
         // --- A. Read & Smooth ADC Inputs ---
-        for(int i = 0; i < 4; i++)
+        for(int i = 0; i < gamma_pins::knobs::COUNT; i++)
         {
-            // Potentiometers (active high w/ 1.0 - raw)
-            float raw_k = 1.0f - hw.adc.GetFloat(i);
+            float raw_k = hw.adc.GetFloat(i);
+            if(gamma_pins::knobs::invert[i])
+                raw_k = 1.0f - raw_k;
             if(raw_k < 0.0f) raw_k = 0.0f;
             if(raw_k > 1.0f) raw_k = 1.0f;
             g_knobs[i] += 0.1f * (raw_k - g_knobs[i]);
+        }
 
-            // Joysticks
-            float raw_s = hw.adc.GetFloat(4 + i);
-            if(i > 0) raw_s = 1.0f - raw_s; // Invert LY, RX, RY
+        for(int i = 0; i < gamma_pins::joysticks::COUNT; i++)
+        {
+            float raw_s = hw.adc.GetFloat(gamma_pins::knobs::COUNT + i);
+            if(gamma_pins::joysticks::invert[i])
+                raw_s = 1.0f - raw_s;
             if(raw_s < 0.0f) raw_s = 0.0f;
             if(raw_s > 1.0f) raw_s = 1.0f;
             g_sticks[i] += 0.1f * (raw_s - g_sticks[i]);
@@ -656,14 +610,14 @@ int main(void)
         // Test tone frequency adjustment via Knob 1 in test mode (50 Hz to 2000 Hz)
         if(g_current_mode == MODE_TEST_TONE)
         {
-            g_test_freq = 50.0f + g_knobs[1] * 1950.0f;
+            g_test_freq = 50.0f + g_knobs[gamma_pins::knobs::CHORD_FILTER] * 1950.0f;
             g_test_osc.SetFreq(g_test_freq);
         }
 
         // --- B. Digital Key Switch Processing ---
         // Note Keys (N1-N7)
         int pressed_note = -1;
-        for(int i = 0; i < 7; i++)
+        for(int i = 0; i < gamma_pins::note_keys::COUNT; i++)
         {
             g_note_keys[i].Debounce();
             if(g_note_keys[i].Pressed())
@@ -681,7 +635,7 @@ int main(void)
         if(pressed_note >= 0)
         {
             // Calculate frequency with pitch bend
-            float pitch_bend = powf(2.0f, (g_sticks[0] - 0.5f) * (4.0f / 12.0f));
+            float pitch_bend = powf(2.0f, (g_sticks[gamma_pins::joysticks::LEFT_X] - 0.5f) * (4.0f / 12.0f));
             g_note_osc.SetFreq(kNoteFreqs[pressed_note] * pitch_bend);
             g_note_target_amp = 1.0f;
         }
@@ -692,7 +646,7 @@ int main(void)
 
         // Chord Keys (C1-C7)
         int pressed_chord = -1;
-        for(int i = 0; i < 7; i++)
+        for(int i = 0; i < gamma_pins::chord_keys::COUNT; i++)
         {
             g_chord_keys[i].Debounce();
             if(g_chord_keys[i].Pressed())
@@ -709,7 +663,7 @@ int main(void)
         g_active_chord_idx = pressed_chord;
         if(pressed_chord >= 0)
         {
-            float pitch_bend = powf(2.0f, (g_sticks[0] - 0.5f) * (4.0f / 12.0f));
+            float pitch_bend = powf(2.0f, (g_sticks[gamma_pins::joysticks::LEFT_X] - 0.5f) * (4.0f / 12.0f));
             g_chord_osc[0].SetFreq(kChords[pressed_chord].r * pitch_bend);
             g_chord_osc[1].SetFreq(kChords[pressed_chord].t * pitch_bend);
             g_chord_osc[2].SetFreq(kChords[pressed_chord].f * pitch_bend);
