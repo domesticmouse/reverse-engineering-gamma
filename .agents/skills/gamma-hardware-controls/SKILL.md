@@ -71,7 +71,7 @@ Consult the detailed topical references below for full code snippets, electrical
 
 5. [**Complete Integration Architecture & Main Loop Blueprint**](references/main_loop_blueprint.md)
    * End-to-end firmware boilerplate integrating all controls into a non-blocking architecture.
-   * Initialization sequence: system rail (`PC3` driven `LOW`), display reset, ADC start, and timer start.
+   * Initialization sequence: speaker mute (`PC3` driven `LOW` during boot, unmuted `HIGH` after audio start), display reset, ADC start, and timer start.
    * Main loop event processing, encoder delta dispatch, analog polling, and throttled display rendering.
 
 ---
@@ -85,4 +85,4 @@ Consult the detailed topical references below for full code snippets, electrical
 | **Right stick X moves opposite to Left stick** | PCB trace routing reversed on right stick | [Stick Polarities](references/analog_inputs.md#2-electrical-polarities--inversion-details) |
 | **Rotary encoder misses clicks while turning** | Main loop blocked by `oled.Update()` (9–23 ms) | [1 kHz Timer Architecture](references/rotary_encoder.md#3-the-display-blocking-hazard--1-khz-timer-isr) |
 | **Keys feel sluggish or drop quick presses** | Low polling rate in main loop | [1 kHz Key Debounce](references/digital_keys.md#2-key-debouncing--1-khz-sampling-architecture) |
-| **Synthetic ground or rail unpowered** | Pin `PC3` uninitialized | [Main Loop Blueprint (Rail Low)](references/main_loop_blueprint.md#2-integrated-implementation-skeleton) |
+| **Internal case speakers silent** | Pin `PC3` held LOW or uninitialized | [Main Loop Blueprint (Speaker Amp)](references/main_loop_blueprint.md#2-integrated-implementation-skeleton) |

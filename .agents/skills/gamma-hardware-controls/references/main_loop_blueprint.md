@@ -133,11 +133,12 @@ void TimerCallback(void* data)
 int main(void)
 {
     hw.Init();
+    hw.StartLog(false);
 
-    // 1. Auxiliary low rail
-    GPIO rail_low;
-    rail_low.Init(gamma_pins::system_pins::pin_rail_low, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
-    rail_low.Write(false);
+    // 1. Speaker Amplifier Enable (PC3) - Hold LOW at startup to prevent pop
+    GPIO spk_en;
+    spk_en.Init(gamma_pins::system_pins::pin_speaker_en, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
+    spk_en.Write(false); // Held LOW during hardware init; drive HIGH after hw.StartAudio()
 
     // 2. Display Init (with bus reset)
     __HAL_RCC_I2C1_FORCE_RESET();

@@ -6,21 +6,29 @@ The Gamma synthesizer exposes 8 analog user controls (4 potentiometers and 4 joy
 
 ## 1. ADC Channel Mapping Table
 
-| Index | Name | Function | Daisy Seed Pin | STM32 Pin | ADC1 Channel | Software Polarity |
-| :---: | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0` | **Knob 0** | Chord Vol | `seed::D18` | `PA7` | `ADC1_INP7` (`A3`) | **Inverted** (`1.0 - raw`) |
-| `1` | **Knob 1** | Chord Filter | `seed::D17` | `PB1` | `ADC1_INP5` (`A2`) | **Inverted** (`1.0 - raw`) |
-| `2` | **Knob 2** | Notes Vol | `seed::D19` | `PA6` | `ADC1_INP3` (`A4`) | **Inverted** (`1.0 - raw`) |
-| `3` | **Knob 3** | Notes Filter | `seed::D20` | `PC1` | `ADC1_INP11` (`A5`) | **Inverted** (`1.0 - raw`) |
-| `4` | **Left Stick X (LX)** | Modulation / Pitch | `seed::D22` | `PA5` | `ADC1_INP19` (`A7`) | **Normal** (`raw`): Left=0%, Right=100% |
-| `5` | **Left Stick Y (LY)** | Modulation / Pitch | `seed::D21` | `PC4` | `ADC1_INP4` (`A6`) | **Inverted** (`1.0 - raw`): Down=0%, Up=100% |
-| `6` | **Right Stick X (RX)** | Filter / FX Control | `seed::D24` | `PA1` | `ADC1_INP17` (`A9`) | **Inverted** (`1.0 - raw`): Left=0%, Right=100% |
-| `7` | **Right Stick Y (RY)** | Filter / FX Control | `seed::D23` | `PA4` | `ADC1_INP18` (`A8`) | **Inverted** (`1.0 - raw`): Down=0%, Up=100% |
-| `8` | **Auxiliary ADC** | Battery / Rail Sense | `seed::D31` | `PC2` | `ADC1_INP12` (`A12`)| Direct voltage readout |
+| 0-Indexed | 1-Indexed (Physical) | Name | Function | Daisy Seed Pin | STM32 Pin | ADC1 Channel | Software Polarity |
+| :---: | :---: | :--- | :--- | :--- | :--- | :--- | :--- |
+| `0` | **Knob 1** | Chord Vol | `seed::D18` | `PA7` | `ADC1_INP7` (`A3`) | **Inverted** (`1.0 - raw`) |
+| `1` | **Knob 2** | Chord Filter | `seed::D17` | `PB1` | `ADC1_INP5` (`A2`) | **Inverted** (`1.0 - raw`) |
+| `2` | **Knob 3** | Notes Vol | `seed::D19` | `PA6` | `ADC1_INP3` (`A4`) | **Inverted** (`1.0 - raw`) |
+| `3` | **Knob 4** | Notes Filter | `seed::D20` | `PC1` | `ADC1_INP11` (`A5`) | **Inverted** (`1.0 - raw`) |
+| `4` | — | **Left Stick X (LX)** | Modulation / Pitch | `seed::D22` | `PA5` | `ADC1_INP19` (`A7`) | **Normal** (`raw`): Left=0%, Right=100% |
+| `5` | — | **Left Stick Y (LY)** | Modulation / Pitch | `seed::D21` | `PC4` | `ADC1_INP4` (`A6`) | **Inverted** (`1.0 - raw`): Down=0%, Up=100% |
+| `6` | — | **Right Stick X (RX)** | Filter / FX Control | `seed::D24` | `PA1` | `ADC1_INP17` (`A9`) | **Inverted** (`1.0 - raw`): Left=0%, Right=100% |
+| `7` | — | **Right Stick Y (RY)** | Filter / FX Control | `seed::D23` | `PA4` | `ADC1_INP18` (`A8`) | **Inverted** (`1.0 - raw`): Down=0%, Up=100% |
+| `8` | — | **Auxiliary ADC** | Battery / Rail Sense | `seed::D31` | `PC2` | `ADC1_INP12` (`A12`)| Direct voltage readout |
 
 ---
 
-## 2. Electrical Polarities & Inversion Details
+## 2. Ergonomic Layout & Criss-Cross Playing Design
+
+The physical placement of the 4 knobs across the top panel (Knobs 1 to 4 from left to right) is intentionally crossed relative to the keypads:
+* **Left Keypad (Note Keys N1–N7):** Played with the **left hand**. The corresponding Note controls (**Knob 3: Note Vol**, **Knob 4: Note Filter**) are located on the **right side** of the top panel, allowing the player's free **right hand** to tweak volume and filter cutoff simultaneously while holding notes.
+* **Right Keypad (Chord Keys C1–C7):** Played with the **right hand**. The corresponding Chord controls (**Knob 1: Chord Vol**, **Knob 2: Chord Filter**) are located on the **left side** of the top panel, allowing the player's free **left hand** to adjust chords without crossing wrists awkwardly over the playing hand.
+
+---
+
+## 3. Electrical Polarities & Inversion Details
 
 ### 4 Potentiometers (Knobs across top panel)
 * **Physical Sweep:** The potentiometer wipers sweep from 3.3V at fully counter-clockwise (CCW) to 0V at fully clockwise (CW).

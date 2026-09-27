@@ -145,8 +145,9 @@ static Switch      g_chord_keys[gamma_pins::chord_keys::COUNT];
 static Switch      g_enc_click;
 static GPIO        g_enc_gpio_a;
 static GPIO        g_enc_gpio_b;
-static GPIO        g_aux_low;
-static GPIO        g_aux_pull;
+static GPIO        g_spk_en;
+static bool        g_speaker_enabled = true; // PC3 state (true = Spk ON, false = Muted)
+static GPIO        g_pwr_fault;              // PB12 (D0): Battery Low / Power Fault ("Charge Me!")
 static TimerHandle g_timer;
 
 // Interrupt-safe single-producer single-consumer key event ring buffer
@@ -179,7 +180,7 @@ static volatile uint32_t g_enc_transitions = 0;
 static float g_knobs[gamma_pins::knobs::COUNT]       = {0.5f, 0.5f, 0.5f, 0.5f};
 static float g_sticks[gamma_pins::joysticks::COUNT] = {0.5f, 0.5f, 0.5f, 0.5f};
 
-static char     g_last_event[36]  = "Ready - Audio Active";
+static char     g_last_event[36]  = "Ready - Speaker ON";
 static uint32_t g_last_event_time = 0;
 
 // Soft saturation curve (avoids harsh clipping, adds warm analog saturation)
@@ -237,10 +238,33 @@ void TimerCallback(void* data)
             g_enc_pos--;
     }
 
-    // 2. Encoder Push Switch Debouncing (1 kHz sampling)
+    // 2. Encoder Push Switch Debouncing & Long-Press Detection (1 kHz sampling)
+    static uint32_t s_enc_press_time = 0;
+    static bool     s_enc_long_fired = false;
+
     g_enc_click.Debounce();
-    if(g_enc_click.RisingEdge())       EnqueueKeyEvent(14, true);
-    else if(g_enc_click.FallingEdge()) EnqueueKeyEvent(14, false);
+    if(g_enc_click.RisingEdge())
+    {
+        s_enc_press_time = System::GetNow();
+        s_enc_long_fired = false;
+    }
+    else if(g_enc_click.Pressed())
+    {
+        // While held, if 600 ms elapses, fire long-press event immediately
+        if(!s_enc_long_fired && (System::GetNow() - s_enc_press_time >= 600))
+        {
+            s_enc_long_fired = true;
+            EnqueueKeyEvent(16, true); // Event 16: Toggle Speaker Mute
+        }
+    }
+    else if(g_enc_click.FallingEdge())
+    {
+        // Only trigger short click if long-press was not already triggered
+        if(!s_enc_long_fired)
+        {
+            EnqueueKeyEvent(14, true); // Event 14: Toggle Audio Mode
+        }
+    }
 
     // 3. Note Keys Debouncing (1 kHz sampling)
     for(size_t i = 0; i < gamma_pins::note_keys::COUNT; i++)
@@ -290,10 +314,21 @@ void UsbRxCallback(uint8_t* buff, uint32_t* length)
                 g_chord_osc[k].SetWaveform(wf);
             hw.PrintLine("[WAVE] Oscillator waveform changed to %s", kWaveNames[g_current_waveform]);
         }
+        else if(c == 's' || c == 'S')
+        {
+            g_speaker_enabled = !g_speaker_enabled;
+            g_spk_en.Write(g_speaker_enabled);
+            snprintf(g_last_event, sizeof(g_last_event), "Speaker: %s", g_speaker_enabled ? "ON" : "MUTED");
+            g_last_event_time = System::GetNow();
+            hw.PrintLine("[SPK] Speaker %s (PC3 = %d)",
+                         g_speaker_enabled ? "ENABLED" : "MUTED",
+                         g_speaker_enabled ? 1 : 0);
+        }
         else if(c == 'h' || c == 'H' || c == '?')
         {
             hw.PrintLine("\n--- Gamma Phase 5 Audio Commands ---");
             hw.PrintLine("  m/t : Toggle mode (SYNTH vs TEST TONE)");
+            hw.PrintLine("  s   : Toggle internal speaker mute (PC3)");
             hw.PrintLine("  w   : Cycle waveform (Sine, Tri, Saw, Square)");
             hw.PrintLine("  b   : Reboot into DFU Bootloader");
             hw.PrintLine("  h/? : Print this help\n");
@@ -454,14 +489,17 @@ static void UpdateScreen()
 
     oled.Fill(false);
 
-    // Row 1: Header (Mode + Active Waveform)
+    // Row 1: Header (Mode + Speaker Status + Active Waveform)
     oled.SetCursor(0, 0);
     if(g_current_mode == MODE_SYNTH)
         oled.WriteString("GAMMA SYNTH", Font_6x8, true);
     else
-        oled.WriteString("GAMMA TEST TONE", Font_6x8, true);
+        oled.WriteString("GAMMA TONE", Font_6x8, true);
 
-    oled.SetCursor(92, 0);
+    oled.SetCursor(70, 0);
+    oled.WriteString(g_speaker_enabled ? "SPK" : "MUT", Font_6x8, true);
+
+    oled.SetCursor(98, 0);
     oled.WriteString(kWaveNames[g_current_waveform], Font_6x8, true);
     DrawLineH(0, 127, 9, true);
 
@@ -551,18 +589,20 @@ int main(void)
     hw.PrintLine("  - Note Keys N1-N7  : Play C4 to B4 major scale");
     hw.PrintLine("  - Chord Keys C1-C7 : Play triads (C, Dm, Em, F, G, Am, Bdim)");
     hw.PrintLine("  - Knobs K0-K3      : Chord Vol, Chord Filter, Note Vol, Note Filter");
+    hw.PrintLine("                       (Turn K0/K2 clockwise to increase volume)");
     hw.PrintLine("  - Left Stick (LX)  : Pitch bend");
     hw.PrintLine("  - Right Stick (RX) : Stereo pan");
     hw.PrintLine("  - Rotary Encoder   : Turn = Cycle Waveform, Click = Mode Toggle");
-    hw.PrintLine("  - USB Commands     : 'm' (mode), 'w' (wave), 'b' (bootloader)\n");
+    hw.PrintLine("  - USB Commands     : 'm' (mode), 's' (speaker mute), 'w' (wave), 'b' (bootloader)\n");
 
     // 3. Initialize OLED Display (I2C1 @ 0x3D)
     InitOled();
 
-    // 4. Initialize Board Rail / Aux Pins
-    g_aux_low.Init(gamma_pins::system_pins::pin_rail_low, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
-    g_aux_low.Write(false); // Drive PC3 LOW
-    g_aux_pull.Init(gamma_pins::system_pins::pin_aux_in, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+    // 4. Initialize Speaker Amplifier Enable (PC3) & Battery Fault (PB12)
+    // Start with speaker MUTED (LOW) to avoid audible startup transient/pop
+    g_spk_en.Init(gamma_pins::system_pins::pin_speaker_en, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
+    g_spk_en.Write(false); // Held LOW during hardware init
+    g_pwr_fault.Init(gamma_pins::system_pins::pin_power_fault, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
     // 5. Initialize 14 Key Switches (1 kHz debounce update rate)
     for(int i = 0; i < gamma_pins::chord_keys::COUNT; i++)
@@ -625,6 +665,12 @@ int main(void)
     // 10. Start Audio Processing Callback
     hw.StartAudio(AudioCallback);
     hw.PrintLine("[AUDIO] SAI1 PCM3060 audio engine started @ %.0f Hz.", sample_rate);
+
+    // 11. Allow audio codec output to stabilize, then unmute Speaker Amplifier (PC3 HIGH)
+    System::Delay(60);
+    g_speaker_enabled = true;
+    g_spk_en.Write(g_speaker_enabled);
+    hw.PrintLine("[AUDIO] Speaker amplifier enabled (PC3 = HIGH).");
 
     uint32_t last_screen_time = System::GetNow();
     uint32_t last_blink_time  = System::GetNow();
@@ -691,13 +737,25 @@ int main(void)
             }
             else if(ev.id == 14 && ev.pressed)
             {
-                // Encoder Push Switch Click
+                // Short Encoder Click (< 600ms) -> Toggle Mode
                 g_current_mode = (g_current_mode == MODE_SYNTH) ? MODE_TEST_TONE : MODE_SYNTH;
                 snprintf(g_last_event, sizeof(g_last_event), "Mode: %s",
                          (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
                 g_last_event_time = now;
                 hw.PrintLine("[MODE] Mode toggled to %s",
                              (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
+            }
+            else if(ev.id == 16 && ev.pressed)
+            {
+                // Long Encoder Press (>= 600ms) -> Toggle Speaker Mute
+                g_speaker_enabled = !g_speaker_enabled;
+                g_spk_en.Write(g_speaker_enabled);
+                snprintf(g_last_event, sizeof(g_last_event), "Speaker: %s",
+                         g_speaker_enabled ? "ON" : "MUTED");
+                g_last_event_time = now;
+                hw.PrintLine("[SPK] Manual toggle -> Speaker Amp %s (PC3 = %d)",
+                             g_speaker_enabled ? "ENABLED" : "MUTED",
+                             g_speaker_enabled ? 1 : 0);
             }
         }
 
@@ -793,7 +851,8 @@ int main(void)
         // Clear stale last event
         if(g_last_event_time > 0 && (now - g_last_event_time > 3000))
         {
-            snprintf(g_last_event, sizeof(g_last_event), "Audio Running (48k)");
+            snprintf(g_last_event, sizeof(g_last_event), "Audio (48k) - %s",
+                     g_speaker_enabled ? "SPK ON" : "MUTED");
             g_last_event_time = 0;
         }
 

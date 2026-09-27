@@ -18,25 +18,28 @@ namespace display
 }
 
 // ============================================================================
-// Potentiometers (4 Rotary Knobs across top panel, left to right)
+// Potentiometers (4 Rotary Knobs across top panel, left to right: Knobs 1 to 4)
 // Wipers sweep 3.3V (full CCW) to 0V (full CW); invert in software: (1.0 - raw)
+// Ergonomics:
+//   - Note keys on left are played by left hand while right hand adjusts Knobs 3 & 4 (Notes Vol/Filter).
+//   - Chord keys on right are played by right hand while left hand adjusts Knobs 1 & 2 (Chord Vol/Filter).
 // ============================================================================
 namespace knobs
 {
     enum Index
     {
-        CHORD_VOL = 0,
-        CHORD_FILTER,
-        NOTES_VOL,
-        NOTES_FILTER,
+        CHORD_VOL = 0,    // Physical Knob 1
+        CHORD_FILTER,     // Physical Knob 2
+        NOTES_VOL,        // Physical Knob 3
+        NOTES_FILTER,     // Physical Knob 4
         COUNT
     };
 
     constexpr daisy::Pin pins[COUNT] = {
-        daisy::seed::D18, // 0: Chord Vol    (PA7 / ADC1_INP7  / A3)
-        daisy::seed::D17, // 1: Chord Filter (PB1 / ADC1_INP5  / A2)
-        daisy::seed::D19, // 2: Notes Vol    (PA6 / ADC1_INP3  / A4)
-        daisy::seed::D20  // 3: Notes Filter (PC1 / ADC1_INP11 / A5)
+        daisy::seed::D18, // Knob 1 (0): Chord Vol    (PA7 / ADC1_INP7  / A3)
+        daisy::seed::D17, // Knob 2 (1): Chord Filter (PB1 / ADC1_INP5  / A2)
+        daisy::seed::D19, // Knob 3 (2): Notes Vol    (PA6 / ADC1_INP3  / A4)
+        daisy::seed::D20  // Knob 4 (3): Notes Filter (PC1 / ADC1_INP11 / A5)
     };
 
     constexpr bool invert[COUNT] = {true, true, true, true};
@@ -151,12 +154,18 @@ namespace encoder
 }
 
 // ============================================================================
-// Board Rail & Auxiliary GPIOs
+// System, Power & Speaker GPIOs
 // ============================================================================
 namespace system_pins
 {
-    constexpr daisy::Pin pin_rail_low = daisy::Pin(daisy::PORTC, 3); // PC3: Driven LOW (0)
-    constexpr daisy::Pin pin_aux_in   = daisy::seed::D0;            // PB12: Input Pull-up
+    // PC3: Internal Speaker Amplifier Enable / Mute (Active-HIGH)
+    // - Drive HIGH (1) to enable speaker amplifier
+    // - Drive LOW (0) to mute / shutdown speaker amplifier (e.g. at boot)
+    constexpr daisy::Pin pin_speaker_en = daisy::Pin(daisy::PORTC, 3);
+
+    // PB12 (D0): Battery Low / Power Fault Monitor (Active-LOW w/ internal pull-up)
+    // - Factory firmware prompts "Charge Me!" and halts audio when pulled LOW
+    constexpr daisy::Pin pin_power_fault = daisy::seed::D0;
 }
 
 } // namespace gamma_pins

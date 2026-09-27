@@ -35,10 +35,10 @@ A ready-to-use C++ header containing these definitions is available at:
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **OLED Display** | SCL | `seed::D11` | `PB8` | `I2C1_SCL` | Alternate Function 4 | Open-drain w/ pullup | Verified on Hardware |
 | **OLED Display** | SDA | `seed::D12` | `PB9` | `I2C1_SDA` | Alternate Function 4 | Open-drain w/ pullup | Verified on Hardware |
-| **Potentiometer** | Knob 0 (Chord Vol) | `seed::D18` | `PA7` | `ADC1_INP7` (`A3`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
-| **Potentiometer** | Knob 1 (Chord Filter) | `seed::D17` | `PB1` | `ADC1_INP5` (`A2`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
-| **Potentiometer** | Knob 2 (Notes Vol) | `seed::D19` | `PA6` | `ADC1_INP3` (`A4`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
-| **Potentiometer** | Knob 3 (Notes Filter) | `seed::D20` | `PC1` | `ADC1_INP11` (`A5`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
+| **Potentiometer** | Knob 1 / K0 (Chord Vol) | `seed::D18` | `PA7` | `ADC1_INP7` (`A3`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
+| **Potentiometer** | Knob 2 / K1 (Chord Filter) | `seed::D17` | `PB1` | `ADC1_INP5` (`A2`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
+| **Potentiometer** | Knob 3 / K2 (Notes Vol) | `seed::D19` | `PA6` | `ADC1_INP3` (`A4`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
+| **Potentiometer** | Knob 4 / K3 (Notes Filter) | `seed::D20` | `PC1` | `ADC1_INP11` (`A5`) | Analog Input | Inverted: `1.0 - raw` | Verified on Hardware |
 | **Joystick Left** | LX (Left-Right) | `seed::D22` | `PA5` | `ADC1_INP19` (`A7`) | Analog Input | Normal: Left=0%, Right=100% | Verified on Hardware |
 | **Joystick Left** | LY (Down-Up) | `seed::D21` | `PC4` | `ADC1_INP4` (`A6`) | Analog Input | Inverted: Down=0%, Up=100% | Verified on Hardware |
 | **Joystick Right** | RX (Left-Right) | `seed::D24` | `PA1` | `ADC1_INP17` (`A9`) | Analog Input | Inverted: Left=0%, Right=100% | Verified on Hardware |
@@ -61,8 +61,8 @@ A ready-to-use C++ header containing these definitions is available at:
 | **Rotary Encoder** | Phase A | `seed::D15` | `PC0` | GPIO In | Internal Pull-up | Quadrature Gray Code | Verified on Hardware |
 | **Rotary Encoder** | Phase B | `seed::D16` | `PA3` | GPIO In | Internal Pull-up | Quadrature Gray Code | Verified on Hardware |
 | **Rotary Encoder** | Push Button | `seed::D28` | `PA2` | GPIO In | Internal Pull-up | Active LOW (Pressed = 0) | Verified on Hardware |
-| **Rail Ground** | Board Rail Low | N/A | `PC3` | GPIO Out | Output Push-Pull | Driven LOW (`0`) | Confirmed Disassembly |
-| **Auxiliary In** | Aux Input Pull | `seed::D0` | `PB12` | GPIO In | Internal Pull-up | Logic input | Confirmed Disassembly |
+| **Speaker Amp En** | Speaker Enable/Mute | N/A | `PC3` | GPIO Out | Output Push-Pull | Active HIGH (`1`=On, `0`=Muted) | Verified on Hardware |
+| **Power Fault Sense** | Battery Low / Power Fault | `seed::D0` | `PB12` | GPIO In | Internal Pull-up | Active LOW ("Charge Me!") | Confirmed Disassembly |
 | **Audio Out** | Stereo DAC Out | Internal | Multiple | `SAI1` | PCM3060 Codec | 48 kHz / 24-bit Stereo | Internal Daisy routing |
 | **MIDI Out** | 3.5mm TRS MIDI | `seed::D14` / `D29` | `PB7` / `PB10` | Hardware UART TX | 31,250 baud | MIDI Serial | Testing in Phase 5 |
 | **USB-C** | D+ / D- / Power | Internal | `PA11`/`PA12` | `USB_OTG_FS` | Full Speed Device | `vbus_sensing = DISABLE` | Verified on Hardware |
@@ -198,11 +198,18 @@ The rotary dial on the front panel is connected via a 4-wire harness:
 
 ---
 
-## 7. Board Rail & Auxiliary GPIOs
+## 7. Speaker Amplifier Enable & System Power GPIOs
 
-Disassembly of factory firmware revealed two auxiliary pins initialized during board setup:
-* **`PC3` (Board Rail):** Configured as a GPIO Output and driven `LOW` (`0`). Acts as an auxiliary ground reference or power rail switch.
-* **`seed::D0` (`PB12`):** Configured as a GPIO Input with internal pull-up.
+* **`PC3` (Speaker Amplifier Enable / Mute):**
+  * Configured as a GPIO Output push-pull.
+  * Controls the shutdown/enable pin of the on-board Class-D speaker amplifier driving the internal case speakers.
+  * **Polarity:** Active HIGH.
+    * `0` (`LOW`): Speaker amplifier in shutdown / muted (`SPK OFF`).
+    * `1` (`HIGH`): Speaker amplifier enabled (`SPK ON`).
+  * **Anti-Pop Initialization Sequence:** Hold `PC3` LOW (`0`) during boot and peripheral setup. After starting the audio engine (`hw.StartAudio()`), delay $\approx 60\text{ ms}$ to allow DAC bias voltages to stabilize before driving `PC3` HIGH (`1`).
+* **`seed::D0` (`PB12` - Power Fault / Battery Low Monitor):**
+  * Configured as a GPIO Input with internal pull-up.
+  * Monitored by the main loop: when pulled LOW (`0`), factory firmware displays `"Charge Me!"` and halts audio output.
 
 ---
 

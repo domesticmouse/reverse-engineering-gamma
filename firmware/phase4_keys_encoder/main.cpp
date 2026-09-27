@@ -365,11 +365,11 @@ int main(void)
     // Initialize OLED Display
     InitOled();
 
-    // Initialize Auxiliary GPIO pins (mirroring factory firmware)
-    g_aux_low.Init(gamma_pins::system_pins::pin_rail_low, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
-    g_aux_low.Write(false); // Drive PC3 LOW
+    // Initialize Speaker Amp Enable (PC3) and Power Fault Monitor (PB12)
+    g_aux_low.Init(gamma_pins::system_pins::pin_speaker_en, GPIO::Mode::OUTPUT, GPIO::Pull::NOPULL);
+    g_aux_low.Write(false); // Hold PC3 LOW during diagnostics
 
-    g_aux_pull.Init(gamma_pins::system_pins::pin_aux_in, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
+    g_aux_pull.Init(gamma_pins::system_pins::pin_power_fault, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
     // Initialize 14 Key Switches (discrete active-low with pullups)
     for(size_t i = 0; i < gamma_pins::chord_keys::COUNT; i++)

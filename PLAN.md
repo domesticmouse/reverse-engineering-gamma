@@ -78,7 +78,7 @@ The complete pin mapping, electrical specifications, and peripheral configuratio
 | **Aux ADC** | Internal / Battery / Aux sensor | 1 ADC channel: `seed::D31` (`PC2`/`A12`) | **Confirmed via Disassembly** |
 | **14 Keys** | 14 tactile low-profile switches (7 chord, 7 note) | 14 discrete GPIO inputs w/ internal pullups (`seed::D1`–`D10`, `D13`, `D14`, `D26`, `D27`) | **Confirmed via Disassembly** |
 | **Rotary Encoder** | 1 rotary dial w/ push switch (scale/key selection) | Phase A (`D15`), Phase B (`D16`), Push Switch (`D28`) | **Confirmed via Disassembly** |
-| **Board Rail / Aux** | Grounding rail & auxiliary input | `PC3`: Output LOW (`0`), `seed::D0` (`PB12`): Input Pullup | **Confirmed via Disassembly** |
+| **Speaker Amp En** | Internal speaker amplifier enable / mute | `PC3` (GPIO Out, Active HIGH: `1`=On, `0`=Muted) | **Verified on Hardware** |
 | **Audio Output** | 3.5mm stereo headphone jack | On-board PCM3060 codec via SAI | Internal Daisy routing |
 | **MIDI Output** | 3.5mm TRS MIDI Out | Hardware UART TX @ 31,250 baud | In progress |
 | **USB-C** | Power, flashing (DFU), USB Serial/MIDI | STM32 USB OTG FS (`vbus_sensing_enable = DISABLE`) | **Verified on Hardware** |
@@ -179,9 +179,9 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
      - **Phase A Pin:** `seed::D15` (`PC0`)
      - **Phase B Pin:** `seed::D16` (`PA3`)
      - **Push Switch Pin:** `seed::D28` (`PA2`, active low w/ internal pull-up)
-   - **Board Rail & Auxiliary GPIOs:**
-     - `PC3`: Initialized as GPIO output and held LOW (`0`) at `0x24007bfc`
-     - `seed::D0` (`PB12`): Initialized as GPIO input with internal pull-up at `0x24007c1c`
+   - **Speaker Amplifier Enable & Auxiliary GPIOs:**
+     - `PC3`: Speaker amplifier enable / mute (active HIGH). Held LOW (`0`) at `0x24007bfc` during boot for anti-pop protection; driven HIGH (`1`) 60ms after audio initialization (`0x24006b9c`) and toggled via menu (`SPK ON`/`SPK OFF` at `0x2400eb16`).
+     - `seed::D0` (`PB12`): Power fault / battery monitor (input pull-up). Triggers "Charge Me!" display when pulled LOW.
    - **Daisy Hal Integration:** The firmware statically links libDaisy peripheral abstractions (`I2CHandle`, `AdcHandle`, `Switch`, `Encoder`).
 
 2. **Dynamic Probing & On-Screen UI (Diagnostic Builds):**
@@ -280,7 +280,7 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
      - Top row: `C1`–`C4` (`D8`–`D10`, `D13` / `PG11`, `PB4`, `PB5`, `PB6`)
      - Bottom row: `C5`–`C7` (`D14`, `D26`, `D27` / `PB7`, `PD11`, `PG9`)
    - **Rotary Encoder with Push Switch:** Phase A (`D15` / `PC0`), Phase B (`D16` / `PA3`), Click (`D28` / `PA2`). Standard mechanical encoder with 4 Gray code transitions per detent click (FSM decoder, detents at `11`). Requires high-frequency sampling (timer / audio DMA) to avoid missed ticks during I2C display updates.
-   - **Auxiliary Pins:** `PC3` (Output LOW), `seed::D0` (`PB12`, Input pull-up).
+   - **Speaker Amplifier Enable & Auxiliary Pins:** `PC3` (Speaker Enable/Mute, active HIGH), `seed::D0` (`PB12`, Input pull-up).
 
 2. **Dedicated Diagnostic Firmware:**
    - Source: [`firmware/phase4_keys_encoder/main.cpp`](firmware/phase4_keys_encoder/main.cpp)
@@ -301,11 +301,12 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
    - **Mode 0: Interactive Synthesizer:**
      - **7 Note Keys (N1–N7):** Play C Major scale notes ($C_4$ to $B_4$, 261.63 Hz – 493.88 Hz) through an envelope-smoothed oscillator and dedicated state variable lowpass filter.
      - **7 Chord Keys (C1–C7):** Play full 3-oscillator polyphonic triads ($C\text{ Maj}$, $D\text{ Min}$, $E\text{ Min}$, $F\text{ Maj}$, $G\text{ Maj}$, $A\text{ Min}$, $B\text{ Dim}$) through a dedicated state variable lowpass filter.
-     - **Potentiometers (K0–K3):**
-       - `K0` (Chord Vol): Chord synthesizer volume (0% to 100%).
-       - `K1` (Chord Filter): Chord lowpass filter cutoff (100 Hz to 14,000 Hz).
-       - `K2` (Notes Vol): Note synthesizer volume (0% to 100%).
-       - `K3` (Notes Filter): Note lowpass filter cutoff (100 Hz to 14,000 Hz).
+     - **Potentiometers (Knobs 1–4 across top panel, Left to Right):**
+       - `Knob 1` (K0 / Chord Vol): Chord synthesizer volume (0% to 100%).
+       - `Knob 2` (K1 / Chord Filter): Chord lowpass filter cutoff (100 Hz to 14,000 Hz).
+       - `Knob 3` (K2 / Notes Vol): Note synthesizer volume (0% to 100%).
+       - `Knob 4` (K3 / Notes Filter): Note lowpass filter cutoff (100 Hz to 14,000 Hz).
+       - *Ergonomic Design:* Note keys on the left are played with the left hand while Knobs 3 & 4 (Notes Vol/Filter) on the right are adjusted with the right hand. Chord keys on the right are played with the right hand while Knobs 1 & 2 (Chord Vol/Filter) on the left are adjusted with the left hand.
      - **Joysticks:**
        - `LX` (Pitch Bend): $\pm 2$ semitones bend.
        - `LY` (Resonance): Modulates filter resonance ($Q = 0.05$ to $0.75$).
