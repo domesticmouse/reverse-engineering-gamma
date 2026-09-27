@@ -64,7 +64,7 @@ A ready-to-use C++ header containing these definitions is available at:
 | **Speaker Amp En** | Speaker Enable/Mute | N/A | `PC3` | GPIO Out | Output Push-Pull | Active HIGH (`1`=On, `0`=Muted) | Verified on Hardware |
 | **Power Fault Sense** | Battery Low / Power Fault | `seed::D0` | `PB12` | GPIO In | Internal Pull-up | Active LOW ("Charge Me!") | Confirmed Disassembly |
 | **Audio Out** | Stereo DAC Out | Internal | Multiple | `SAI1` | PCM3060 Codec | 48 kHz / 24-bit Stereo | Internal Daisy routing |
-| **MIDI Out** | 3.5mm TRS MIDI | `seed::D14` / `D29` | `PB7` / `PB10` | Hardware UART TX | 31,250 baud | MIDI Serial | Testing in Phase 5 |
+| **MIDI Out** | 3.5mm TRS MIDI | `seed::D29` (`PB10`) | `PB10` | Hardware UART TX | 31,250 baud | MIDI Serial (D14=C5 Key) | Testing in Phase 5 |
 | **USB-C** | D+ / D- / Power | Internal | `PA11`/`PA12` | `USB_OTG_FS` | Full Speed Device | `vbus_sensing = DISABLE` | Verified on Hardware |
 
 ---

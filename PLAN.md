@@ -76,8 +76,8 @@ The complete pin mapping, electrical specifications, and peripheral configuratio
 | **Potentiometers** | 4 rotary knobs (Chords Vol/Filter, Notes Vol/Filter) | 4 ADC channels (`seed::D18`, `D17`, `D19`, `D20` / `A3`, `A2`, `A4`, `A5`) | **Verified on Hardware** |
 | **Thumbsticks** | 2 analog joysticks (Left X/Y, Right X/Y) | 4 ADC channels (`seed::D22`, `D21`, `D24`, `D23` / `A7`, `A6`, `A9`, `A8`) | **Verified on Hardware** |
 | **Aux ADC** | Internal / Battery / Aux sensor | 1 ADC channel: `seed::D31` (`PC2`/`A12`) | **Confirmed via Disassembly** |
-| **14 Keys** | 14 tactile low-profile switches (7 chord, 7 note) | 14 discrete GPIO inputs w/ internal pullups (`seed::D1`–`D10`, `D13`, `D14`, `D26`, `D27`) | **Confirmed via Disassembly** |
-| **Rotary Encoder** | 1 rotary dial w/ push switch (scale/key selection) | Phase A (`D15`), Phase B (`D16`), Push Switch (`D28`) | **Confirmed via Disassembly** |
+| **14 Keys** | 14 tactile low-profile switches (7 chord, 7 note) | 14 discrete GPIO inputs w/ internal pullups (`seed::D1`–`D10`, `D13`, `D14`, `D26`, `D27`) | **Verified on Hardware** |
+| **Rotary Encoder** | 1 rotary dial w/ push switch (scale/key selection) | Phase A (`D15`), Phase B (`D16`), Push Switch (`D28`) | **Verified on Hardware** |
 | **Speaker Amp En** | Internal speaker amplifier enable / mute | `PC3` (GPIO Out, Active HIGH: `1`=On, `0`=Muted) | **Verified on Hardware** |
 | **Audio Output** | 3.5mm stereo headphone jack | On-board PCM3060 codec via SAI | Internal Daisy routing |
 | **MIDI Output** | 3.5mm TRS MIDI Out | Hardware UART TX @ 31,250 baud | In progress |
@@ -159,18 +159,19 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
      - **Display Controller:** **SSD1306** (128x64).
    - **Analog ADC Configuration (Knobs & Joysticks):** Disassembly of the ADC setup routine (`0x24007d4c` - `0x24007f18` and `0x240261f8` `AdcChannelConfig::InitSingle`):
      - **9 Total ADC Channels** configured with `AdcHandle::Init(&cfg, 9)`:
-       - **Joysticks (Channels 0–3, 0.05 fast IIR filter):**
-         - Channel 0: `seed::D18` (`PA7` / `ADC1_INP7` / `A3`)
-         - Channel 1: `seed::D17` (`PB1` / `ADC1_INP5` / `A2`)
-         - Channel 2: `seed::D19` (`PA6` / `ADC1_INP3` / `A4`)
-         - Channel 3: `seed::D20` (`PC1` / `ADC1_INP11` / `A5`)
-       - **Potentiometers (Channels 4–7, 0.002 heavy IIR filter):**
-         - Channel 4: `seed::D24` (`PA1` / `ADC1_INP17` / `A9`)
-         - Channel 5: `seed::D23` (`PA4` / `ADC1_INP18` / `A8`)
-         - Channel 6: `seed::D22` (`PA5` / `ADC1_INP19` / `A7`)
-         - Channel 7: `seed::D21` (`PC4` / `ADC1_INP4` / `A6`)
+       - **Potentiometers (Channels 0–3, 0.05 IIR filter in factory firmware):**
+         - Channel 0: `seed::D18` (`PA7` / `ADC1_INP7` / `A3`) — Knob 1 (Chord Vol)
+         - Channel 1: `seed::D17` (`PB1` / `ADC1_INP5` / `A2`) — Knob 2 (Chord Filter)
+         - Channel 2: `seed::D19` (`PA6` / `ADC1_INP3` / `A4`) — Knob 3 (Notes Vol)
+         - Channel 3: `seed::D20` (`PC1` / `ADC1_INP11` / `A5`) — Knob 4 (Notes Filter)
+       - **Joysticks (Channels 4–7, 0.002 IIR filter in factory firmware):**
+         - Channel 4: `seed::D24` (`PA1` / `ADC1_INP17` / `A9`) — Right Stick X (RX)
+         - Channel 5: `seed::D23` (`PA4` / `ADC1_INP18` / `A8`) — Right Stick Y (RY)
+         - Channel 6: `seed::D22` (`PA5` / `ADC1_INP19` / `A7`) — Left Stick X (LX)
+         - Channel 7: `seed::D21` (`PC4` / `ADC1_INP4` / `A6`) — Left Stick Y (LY)
        - **Auxiliary / Battery ADC (Channel 8):**
          - Channel 8: `seed::D31` (`PC2` / `ADC1_INP12`)
+     - *Note on Filter Values:* Disassembly confirms factory firmware initialized channels 0–3 with `0.05` and channels 4–7 with `0.002`. In custom firmware, we assign `0.002` (or deadband) to the top knobs for steady values and `0.05` to the joysticks for responsive modulation.
    - **14 Discrete Key Switches:** Disassembly of key initialization at `0x24007ab8` - `0x24007bd6` (`Switch::Init` at `0x24025de0`):
      - Each switch is directly connected to a dedicated MCU GPIO with internal pull-up resistor (active low):
        - **Chord Keys (7 switches):** `D8` (`PG11`), `D9` (`PB4`), `D10` (`PB5`), `D13` (`PB6`), `D14` (`PB7`), `D26` (`PD11`), `D27` (`PG9`)
@@ -240,7 +241,7 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
 
 ---
 
-### Phase 3: Analog Pin Mapping (Potentiometers & Joysticks) - IN PROGRESS
+### Phase 3: Analog Pin Mapping (Potentiometers & Joysticks) (COMPLETED)
 **Goal:** Verify and calibrate the 4 knobs and 2 joysticks (4 axes) using live on-screen visual bargraphs and USB serial.
 
 1. **Hardware Pin Mapping (Hardware Verified):**
@@ -254,11 +255,11 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
    - Source: [`firmware/phase3_adc/main.cpp`](firmware/phase3_adc/main.cpp)
    - Binary: `firmware/phase3_adc/build/phase3_adc.bin`
    - Compiled with **`APP_TYPE = BOOT_SRAM`** (verified vectors: SP `0x20020000`, Reset `0x24000795`).
-   - Features 3 interactive OLED display modes (toggled by pressing the Rotary Encoder dial or sending `'m'` over USB serial):
-     - **Mode 0: Analog Overview:** Dual-column 0%–100% and centered bargraphs for all 4 knobs (`K0`–`K3`) and 4 joystick axes (`J0`–`J3`).
-     - **Mode 1: 2D Joystick Crosshairs:** Two real-time 2D Cartesian boxes (`L` and `R`) displaying joystick deflection with moving target dots.
-     - **Mode 2: 14 Keys & Encoder Dashboard:** Interactive visual keypress grid (`C1`–`C7` and `N1`–`N7`) with encoder position and click status.
-   - Non-blocking USB CDC logging of real-time deltas and key events.
+   - Features real-time OLED diagnostic display:
+     - **Dual-Column Analog Overview:** Left column shows 0%–100% bargraphs and numerical values for all 4 knobs (`CV`, `CF`, `NV`, `NF`), right column shows zero-centered bidirectional bargraphs for all 4 joystick axes (`LX`, `LY`, `RX`, `RY`).
+     - **Status Bar:** Displays real-time delta events or uptime counter.
+   - Non-blocking USB CDC logging of real-time deltas and value changes.
+   - *(Note: Dedicated 14 keys & encoder dashboard was implemented in Phase 4 `phase4_keys_encoder`).*
 
 3. **Interactive Hardware Calibration Protocol:**
    - Turn each knob (Chord Vol, Chord Filter, Notes Vol, Notes Filter) $\rightarrow$ Confirm physical-to-logical channel mapping (`K0`–`K3`).
@@ -326,7 +327,7 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
    - **USB CDC Diagnostics:** Non-blocking serial logging and commands (`'m'`/`'t'` toggle mode, `'w'` cycle waveform, `'b'` reboot to DFU bootloader).
 
 2. **MIDI TRS Output (Upcoming):**
-   - Test potential UART TX pins (e.g. `D14` / `USART1_TX`, `D29` / `USART3_TX`).
+   - Test candidate hardware UART TX pin (`seed::D29` / `PB10` / `USART3_TX`). *(Note: `D14` / `PB7` was initially considered, but hardware testing confirmed `D14` is dedicated to Chord Key `C5`).*
    - Transmit continuous MIDI Note On / Note Off messages at 31,250 baud to verify the 3.5mm MIDI Out jack.
 
 ---
