@@ -138,14 +138,38 @@ static volatile float g_peak_right = 0.0f;
 // ========================================================================
 // Controls & Physical Hardware Objects
 // ========================================================================
+// Controls & Physical Hardware Objects
+// ========================================================================
 static Switch      g_note_keys[gamma_pins::note_keys::COUNT];
 static Switch      g_chord_keys[gamma_pins::chord_keys::COUNT];
-static Encoder     g_encoder;
+static Switch      g_enc_click;
 static GPIO        g_enc_gpio_a;
 static GPIO        g_enc_gpio_b;
 static GPIO        g_aux_low;
 static GPIO        g_aux_pull;
 static TimerHandle g_timer;
+
+// Interrupt-safe single-producer single-consumer key event ring buffer
+struct KeyEvent
+{
+    uint8_t id;      // 0-6: Note keys (N1-N7), 7-13: Chord keys (C1-C7), 14: Enc Click
+    bool    pressed; // true = Press, false = Release
+};
+static constexpr size_t kEventQueueSize = 32;
+static KeyEvent         g_event_queue[kEventQueueSize];
+static volatile size_t  g_eq_head = 0;
+static volatile size_t  g_eq_tail = 0;
+
+static inline void EnqueueKeyEvent(uint8_t id, bool pressed)
+{
+    size_t next = (g_eq_head + 1) % kEventQueueSize;
+    if(next != g_eq_tail)
+    {
+        g_event_queue[g_eq_head].id      = id;
+        g_event_queue[g_eq_head].pressed = pressed;
+        g_eq_head                        = next;
+    }
+}
 
 static volatile int32_t  g_enc_pos         = 0;
 static volatile uint8_t  g_raw_a           = 1;
@@ -167,10 +191,11 @@ static inline float SoftSaturate(float x)
 }
 
 // ========================================================================
-// High-Frequency 1 kHz Timer Interrupt (Encoder Quadrature Sampling)
+// High-Frequency 1 kHz Timer Interrupt (Encoder Quadrature & Key Debounce)
 // ========================================================================
 void TimerCallback(void* data)
 {
+    // 1. Rotary Encoder Gray code sampling (4 transitions per detent)
     uint8_t a = g_enc_gpio_a.Read();
     uint8_t b = g_enc_gpio_b.Read();
     g_raw_a = a;
@@ -205,6 +230,27 @@ void TimerCallback(void* data)
             }
         }
         s_prev_quad = curr_quad;
+    }
+
+    // 2. Encoder Push Switch Debouncing (1 kHz sampling)
+    g_enc_click.Debounce();
+    if(g_enc_click.RisingEdge())       EnqueueKeyEvent(14, true);
+    else if(g_enc_click.FallingEdge()) EnqueueKeyEvent(14, false);
+
+    // 3. Note Keys Debouncing (1 kHz sampling)
+    for(size_t i = 0; i < gamma_pins::note_keys::COUNT; i++)
+    {
+        g_note_keys[i].Debounce();
+        if(g_note_keys[i].RisingEdge())       EnqueueKeyEvent(i, true);
+        else if(g_note_keys[i].FallingEdge()) EnqueueKeyEvent(i, false);
+    }
+
+    // 4. Chord Keys Debouncing (1 kHz sampling)
+    for(size_t i = 0; i < gamma_pins::chord_keys::COUNT; i++)
+    {
+        g_chord_keys[i].Debounce();
+        if(g_chord_keys[i].RisingEdge())       EnqueueKeyEvent(7 + i, true);
+        else if(g_chord_keys[i].FallingEdge()) EnqueueKeyEvent(7 + i, false);
     }
 }
 
@@ -366,13 +412,14 @@ static void InitOled()
     gpio_init.Alternate = GPIO_AF4_I2C1;
 
     // D11 (PB8) / D12 (PB9)
-    gpio_init.Pin = (1U << 8) | (1U << 9);
+    gpio_init.Pin = (1U << gamma_pins::display::pin_scl.pin) | 
+                    (1U << gamma_pins::display::pin_sda.pin);
     HAL_GPIO_Init(GPIOB, &gpio_init);
 
     MyOled::Config disp_cfg;
     disp_cfg.driver_config.transport_config.i2c_address               = gamma_pins::display::i2c_address;
     disp_cfg.driver_config.transport_config.i2c_config.periph         = I2CHandle::Config::Peripheral::I2C_1;
-    disp_cfg.driver_config.transport_config.i2c_config.speed          = I2CHandle::Config::Speed::I2C_400KHZ;
+    disp_cfg.driver_config.transport_config.i2c_config.speed          = I2CHandle::Config::Speed::I2C_1MHZ;
     disp_cfg.driver_config.transport_config.i2c_config.mode           = I2CHandle::Config::Mode::I2C_MASTER;
     disp_cfg.driver_config.transport_config.i2c_config.pin_config.scl = gamma_pins::display::pin_scl;
     disp_cfg.driver_config.transport_config.i2c_config.pin_config.sda = gamma_pins::display::pin_sda;
@@ -512,21 +559,18 @@ int main(void)
     g_aux_low.Write(false); // Drive PC3 LOW
     g_aux_pull.Init(gamma_pins::system_pins::pin_aux_in, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
 
-    // 5. Initialize 14 Key Switches
+    // 5. Initialize 14 Key Switches (1 kHz debounce update rate)
     for(int i = 0; i < gamma_pins::chord_keys::COUNT; i++)
         g_chord_keys[i].Init(gamma_pins::chord_keys::pins[i], 1000.0f);
     for(int i = 0; i < gamma_pins::note_keys::COUNT; i++)
         g_note_keys[i].Init(gamma_pins::note_keys::pins[i], 1000.0f);
 
-    // 6. Initialize Rotary Encoder
+    // 6. Initialize Rotary Encoder & Click Switch
     g_enc_gpio_a.Init(gamma_pins::encoder::pin_a, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
     g_enc_gpio_b.Init(gamma_pins::encoder::pin_b, GPIO::Mode::INPUT, GPIO::Pull::PULLUP);
-    g_encoder.Init(gamma_pins::encoder::pin_a,
-                   gamma_pins::encoder::pin_b,
-                   gamma_pins::encoder::pin_click,
-                   1000.0f);
+    g_enc_click.Init(gamma_pins::encoder::pin_click, 1000.0f);
 
-    // 7. Start 1 kHz Hardware Timer for Encoder
+    // 7. Start 1 kHz Hardware Timer for Encoder & Key Debounce
     TimerHandle::Config tim_cfg;
     tim_cfg.periph     = TimerHandle::Config::Peripheral::TIM_5;
     tim_cfg.dir        = TimerHandle::Config::CounterDir::UP;
@@ -582,19 +626,85 @@ int main(void)
     int32_t  last_logged_pos  = 0;
     bool     led_state        = false;
 
+    static bool s_note_held[gamma_pins::note_keys::COUNT]   = {false};
+    static bool s_chord_held[gamma_pins::chord_keys::COUNT] = {false};
+
     while(1)
     {
         uint32_t now = System::GetNow();
 
-        // --- A. Read & Smooth ADC Inputs ---
+        // --- A. Drain Interrupt-Safe Key Event Ring Buffer ---
+        while(g_eq_tail != g_eq_head)
+        {
+            KeyEvent ev = g_event_queue[g_eq_tail];
+            g_eq_tail   = (g_eq_tail + 1) % kEventQueueSize;
+
+            if(ev.id < gamma_pins::note_keys::COUNT)
+            {
+                // Note Keys (N1-N7)
+                s_note_held[ev.id] = ev.pressed;
+                if(ev.pressed)
+                {
+                    g_active_note_idx = ev.id;
+                    snprintf(g_last_event, sizeof(g_last_event), "Note ON: %s", kNoteNames[ev.id]);
+                    g_last_event_time = now;
+                    hw.PrintLine("[NOTE] %s (%.1f Hz) PRESSED", kNoteNames[ev.id], kNoteFreqs[ev.id]);
+                }
+                else if(g_active_note_idx == (int)ev.id)
+                {
+                    // Fall back to most recent remaining held note, if any
+                    int next_note = -1;
+                    for(int k = gamma_pins::note_keys::COUNT - 1; k >= 0; k--)
+                    {
+                        if(s_note_held[k]) { next_note = k; break; }
+                    }
+                    g_active_note_idx = next_note;
+                }
+            }
+            else if(ev.id < gamma_pins::note_keys::COUNT + gamma_pins::chord_keys::COUNT)
+            {
+                // Chord Keys (C1-C7)
+                uint8_t c_idx = ev.id - gamma_pins::note_keys::COUNT;
+                s_chord_held[c_idx] = ev.pressed;
+                if(ev.pressed)
+                {
+                    g_active_chord_idx = c_idx;
+                    snprintf(g_last_event, sizeof(g_last_event), "Chord ON: %s", kChords[c_idx].name);
+                    g_last_event_time = now;
+                    hw.PrintLine("[CHORD] %s PRESSED", kChords[c_idx].name);
+                }
+                else if(g_active_chord_idx == (int)c_idx)
+                {
+                    // Fall back to most recent remaining held chord, if any
+                    int next_chord = -1;
+                    for(int k = gamma_pins::chord_keys::COUNT - 1; k >= 0; k--)
+                    {
+                        if(s_chord_held[k]) { next_chord = k; break; }
+                    }
+                    g_active_chord_idx = next_chord;
+                }
+            }
+            else if(ev.id == 14 && ev.pressed)
+            {
+                // Encoder Push Switch Click
+                g_current_mode = (g_current_mode == MODE_SYNTH) ? MODE_TEST_TONE : MODE_SYNTH;
+                snprintf(g_last_event, sizeof(g_last_event), "Mode: %s",
+                         (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
+                g_last_event_time = now;
+                hw.PrintLine("[MODE] Mode toggled to %s",
+                             (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
+            }
+        }
+
+        // --- B. Read & Filter ADC Inputs (Knobs w/ Deadband, Joysticks w/ Responsive IIR) ---
         for(int i = 0; i < gamma_pins::knobs::COUNT; i++)
         {
             float raw_k = hw.adc.GetFloat(i);
             if(gamma_pins::knobs::invert[i])
                 raw_k = 1.0f - raw_k;
-            if(raw_k < 0.0f) raw_k = 0.0f;
-            if(raw_k > 1.0f) raw_k = 1.0f;
-            g_knobs[i] += 0.1f * (raw_k - g_knobs[i]);
+            raw_k = fmaxf(0.0f, fminf(1.0f, raw_k));
+            if(fabsf(raw_k - g_knobs[i]) > 0.005f)
+                g_knobs[i] = raw_k;
         }
 
         for(int i = 0; i < gamma_pins::joysticks::COUNT; i++)
@@ -602,9 +712,8 @@ int main(void)
             float raw_s = hw.adc.GetFloat(gamma_pins::knobs::COUNT + i);
             if(gamma_pins::joysticks::invert[i])
                 raw_s = 1.0f - raw_s;
-            if(raw_s < 0.0f) raw_s = 0.0f;
-            if(raw_s > 1.0f) raw_s = 1.0f;
-            g_sticks[i] += 0.1f * (raw_s - g_sticks[i]);
+            raw_s = fmaxf(0.0f, fminf(1.0f, raw_s));
+            g_sticks[i] += gamma_pins::joysticks::iir_coefficient * (raw_s - g_sticks[i]);
         }
 
         // Test tone frequency adjustment via Knob 1 in test mode (50 Hz to 2000 Hz)
@@ -614,29 +723,11 @@ int main(void)
             g_test_osc.SetFreq(g_test_freq);
         }
 
-        // --- B. Digital Key Switch Processing ---
-        // Note Keys (N1-N7)
-        int pressed_note = -1;
-        for(int i = 0; i < gamma_pins::note_keys::COUNT; i++)
+        // --- C. Update Active Note & Chord Voices (Continuous Pitch Bend) ---
+        if(g_active_note_idx >= 0)
         {
-            g_note_keys[i].Debounce();
-            if(g_note_keys[i].Pressed())
-                pressed_note = i; // Last pressed takes priority
-
-            if(g_note_keys[i].RisingEdge())
-            {
-                snprintf(g_last_event, sizeof(g_last_event), "Note ON: %s", kNoteNames[i]);
-                g_last_event_time = now;
-                hw.PrintLine("[NOTE] %s (%.1f Hz) PRESSED", kNoteNames[i], kNoteFreqs[i]);
-            }
-        }
-
-        g_active_note_idx = pressed_note;
-        if(pressed_note >= 0)
-        {
-            // Calculate frequency with pitch bend
             float pitch_bend = powf(2.0f, (g_sticks[gamma_pins::joysticks::LEFT_X] - 0.5f) * (4.0f / 12.0f));
-            g_note_osc.SetFreq(kNoteFreqs[pressed_note] * pitch_bend);
+            g_note_osc.SetFreq(kNoteFreqs[g_active_note_idx] * pitch_bend);
             g_note_target_amp = 1.0f;
         }
         else
@@ -644,29 +735,12 @@ int main(void)
             g_note_target_amp = 0.0f;
         }
 
-        // Chord Keys (C1-C7)
-        int pressed_chord = -1;
-        for(int i = 0; i < gamma_pins::chord_keys::COUNT; i++)
-        {
-            g_chord_keys[i].Debounce();
-            if(g_chord_keys[i].Pressed())
-                pressed_chord = i;
-
-            if(g_chord_keys[i].RisingEdge())
-            {
-                snprintf(g_last_event, sizeof(g_last_event), "Chord ON: %s", kChords[i].name);
-                g_last_event_time = now;
-                hw.PrintLine("[CHORD] %s PRESSED", kChords[i].name);
-            }
-        }
-
-        g_active_chord_idx = pressed_chord;
-        if(pressed_chord >= 0)
+        if(g_active_chord_idx >= 0)
         {
             float pitch_bend = powf(2.0f, (g_sticks[gamma_pins::joysticks::LEFT_X] - 0.5f) * (4.0f / 12.0f));
-            g_chord_osc[0].SetFreq(kChords[pressed_chord].r * pitch_bend);
-            g_chord_osc[1].SetFreq(kChords[pressed_chord].t * pitch_bend);
-            g_chord_osc[2].SetFreq(kChords[pressed_chord].f * pitch_bend);
+            g_chord_osc[0].SetFreq(kChords[g_active_chord_idx].r * pitch_bend);
+            g_chord_osc[1].SetFreq(kChords[g_active_chord_idx].t * pitch_bend);
+            g_chord_osc[2].SetFreq(kChords[g_active_chord_idx].f * pitch_bend);
             g_chord_target_amp = 1.0f;
         }
         else
@@ -674,7 +748,7 @@ int main(void)
             g_chord_target_amp = 0.0f;
         }
 
-        // --- C. Rotary Encoder Processing ---
+        // --- D. Rotary Encoder Processing ---
         int32_t cur_pos = g_enc_pos;
         if(cur_pos != last_logged_pos)
         {
@@ -696,26 +770,14 @@ int main(void)
             hw.PrintLine("[ENC] Waveform: %s", kWaveNames[g_current_waveform]);
         }
 
-        // Encoder Push Switch
-        g_encoder.Debounce();
-        if(g_encoder.RisingEdge())
-        {
-            g_current_mode = (g_current_mode == MODE_SYNTH) ? MODE_TEST_TONE : MODE_SYNTH;
-            snprintf(g_last_event, sizeof(g_last_event), "Mode: %s",
-                     (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
-            g_last_event_time = now;
-            hw.PrintLine("[MODE] Mode toggled to %s",
-                         (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
-        }
-
-        // --- D. OLED Screen Refresh (~25 Hz) ---
-        if(now - last_screen_time >= 40)
+        // --- E. OLED Screen Refresh (~30 Hz) ---
+        if(now - last_screen_time >= 33)
         {
             last_screen_time = now;
             UpdateScreen();
         }
 
-        // --- E. LED Heartbeat (1 Hz) ---
+        // --- F. LED Heartbeat (1 Hz) ---
         if(now - last_blink_time >= 500)
         {
             last_blink_time = now;
