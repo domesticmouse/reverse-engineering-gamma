@@ -195,41 +195,46 @@ static inline float SoftSaturate(float x)
 // ========================================================================
 void TimerCallback(void* data)
 {
-    // 1. Rotary Encoder Gray code sampling (4 transitions per detent)
+    // 1. Finite State Machine Rotary Encoder Decoder (zero hysteresis, detents at 11)
     uint8_t a = g_enc_gpio_a.Read();
     uint8_t b = g_enc_gpio_b.Read();
     g_raw_a = a;
     g_raw_b = b;
 
+    #define R_START     0x0
+    #define R_CW_FINAL  0x1
+    #define R_CW_BEGIN  0x2
+    #define R_CW_NEXT   0x3
+    #define R_CCW_BEGIN 0x4
+    #define R_CCW_FINAL 0x5
+    #define R_CCW_NEXT  0x6
+    #define DIR_CW      0x10
+    #define DIR_CCW     0x20
+
+    static const uint8_t kStateTable[7][4] = {
+        // 00          01           10           11
+        {R_START,    R_CW_BEGIN,  R_CCW_BEGIN, R_START},
+        {R_CW_NEXT,  R_START,     R_CW_FINAL,  R_START | DIR_CW},
+        {R_CW_NEXT,  R_CW_BEGIN,  R_START,     R_START},
+        {R_CW_NEXT,  R_CW_BEGIN,  R_CW_FINAL,  R_START},
+        {R_CCW_NEXT, R_START,     R_CCW_BEGIN, R_START},
+        {R_CCW_NEXT, R_CCW_FINAL, R_START,     R_START | DIR_CCW},
+        {R_CCW_NEXT, R_CCW_FINAL, R_CCW_BEGIN, R_START},
+    };
+
+    static uint8_t s_enc_state = R_START;
     static uint8_t s_prev_quad = 0x03;
     uint8_t curr_quad = (a << 1) | b;
     if(curr_quad != s_prev_quad)
     {
         g_enc_transitions++;
-        static const int8_t kQuadTable[16] = {
-             0, -1,  1,  0,
-             1,  0,  0, -1,
-            -1,  0,  0,  1,
-             0,  1, -1,  0
-        };
-        uint8_t idx = (s_prev_quad << 2) | curr_quad;
-        int8_t step = kQuadTable[idx & 0x0F];
-        if(step != 0)
-        {
-            static int8_t s_accum = 0;
-            s_accum += step;
-            if(s_accum >= 4)
-            {
-                g_enc_pos++;
-                s_accum = 0;
-            }
-            else if(s_accum <= -4)
-            {
-                g_enc_pos--;
-                s_accum = 0;
-            }
-        }
         s_prev_quad = curr_quad;
+        s_enc_state = kStateTable[s_enc_state & 0x0F][curr_quad];
+        uint8_t result = s_enc_state & 0x30;
+        if(result == DIR_CW)
+            g_enc_pos++;
+        else if(result == DIR_CCW)
+            g_enc_pos--;
     }
 
     // 2. Encoder Push Switch Debouncing (1 kHz sampling)

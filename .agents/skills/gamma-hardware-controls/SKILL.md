@@ -39,7 +39,7 @@ All hardware pin assignments, peripheral channel constants, and polarity inversi
 | **Right Joystick**| RX (Filter/FX), RY (Filter/FX) | `D24`, `D23` | `ADC1` (Ch 17, 18) | RX: **Inverted**, RY: **Inverted** | [Analog Inputs Reference](references/analog_inputs.md) |
 | **Note Keys** | 7 Tactile Switches (N1–N7) | `D1`–`D7` | Discrete GPIO w/ Pull-up | Active-Low (`0` = Pressed) | [Digital Keys Reference](references/digital_keys.md) |
 | **Chord Keys** | 7 Tactile Switches (C1–C7) | `D8`–`D10`, `D13`, `D14`, `D26`, `D27` | Discrete GPIO w/ Pull-up | Active-Low (`0` = Pressed) | [Digital Keys Reference](references/digital_keys.md) |
-| **Rotary Dial** | Quadrature Encoder & Push Switch | `D15` (A), `D16` (B), `D28` (Click) | GPIO Pull-up / Gray Code | 4 transitions / detent | [Rotary Encoder Reference](references/rotary_encoder.md) |
+| **Rotary Dial** | Quadrature Encoder & Push Switch | `D15` (A), `D16` (B), `D28` (Click) | GPIO Pull-up / FSM | 4 transitions / detent | [Rotary Encoder Reference](references/rotary_encoder.md) |
 
 ---
 

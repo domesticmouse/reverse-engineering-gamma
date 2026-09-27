@@ -279,7 +279,7 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
    - **Right Keypad (7 Chord Keys, Active-Low w/ Pull-up):**
      - Top row: `C1`–`C4` (`D8`–`D10`, `D13` / `PG11`, `PB4`, `PB5`, `PB6`)
      - Bottom row: `C5`–`C7` (`D14`, `D26`, `D27` / `PB7`, `PD11`, `PG9`)
-   - **Rotary Encoder with Push Switch:** Phase A (`D15` / `PC0`), Phase B (`D16` / `PA3`), Click (`D28` / `PA2`). Standard mechanical encoder with 4 Gray code transitions per detent click. Requires high-frequency sampling (timer / audio DMA) to avoid missed ticks during I2C display updates.
+   - **Rotary Encoder with Push Switch:** Phase A (`D15` / `PC0`), Phase B (`D16` / `PA3`), Click (`D28` / `PA2`). Standard mechanical encoder with 4 Gray code transitions per detent click (FSM decoder, detents at `11`). Requires high-frequency sampling (timer / audio DMA) to avoid missed ticks during I2C display updates.
    - **Auxiliary Pins:** `PC3` (Output LOW), `seed::D0` (`PB12`, Input pull-up).
 
 2. **Dedicated Diagnostic Firmware:**

@@ -15,25 +15,34 @@ The front-panel rotary encoder on the Gamma synth features a mechanical quadratu
 
 ---
 
-## 2. Mechanical Detents & Quadrature Gray Code
+## 2. Mechanical Detents & Quadrature State Machine
 
-* **Detent Resolution:** The encoder produces **4 Gray code state transitions per mechanical detent click**.
-* Simple edge detection or relying solely on single-pin interrupts can lead to bounce or double-counting.
-* A robust full-quadrature lookup table decodes transitions and accumulates 4 sub-steps before committing a position increment/decrement.
+* **Detent Resolution:** The encoder produces **4 Gray code state transitions per mechanical detent click**, resting stably at `(1, 1)` at every detent.
+* **Why Sub-step Accumulators Fail:** Simple step accumulation (`s_accum += step`) with arbitrary thresholding introduces contact bounce hysteresis and deadband when reversing direction, causing direction-change steps to be dropped.
+* **Finite State Machine (FSM):** A 7-state finite state machine (Buxton algorithm) tracks full Gray code paths and triggers `DIR_CW` or `DIR_CCW` upon returning to `(1, 1)`, providing zero hysteresis and inherent contact debouncing.
 
-### Gray Code State Transition Lookup Table
-
-```text
-Previous [A, B] -> Current [A, B] (Index: prev << 2 | curr)
-Valid Steps: +1 (CW), -1 (CCW), 0 (No change or invalid transition)
-```
+### State Transition Matrix (Full-Cycle Detents at 11)
 
 ```cpp
-static const int8_t kQuadTable[16] = {
-     0, -1,  1,  0,
-     1,  0,  0, -1,
-    -1,  0,  0,  1,
-     0,  1, -1,  0
+#define R_START     0x0
+#define R_CW_FINAL  0x1
+#define R_CW_BEGIN  0x2
+#define R_CW_NEXT   0x3
+#define R_CCW_BEGIN 0x4
+#define R_CCW_FINAL 0x5
+#define R_CCW_NEXT  0x6
+#define DIR_CW      0x10
+#define DIR_CCW     0x20
+
+static const uint8_t kStateTable[7][4] = {
+    // 00          01           10           11
+    {R_START,    R_CW_BEGIN,  R_CCW_BEGIN, R_START},
+    {R_CW_NEXT,  R_START,     R_CW_FINAL,  R_START | DIR_CW},
+    {R_CW_NEXT,  R_CW_BEGIN,  R_START,     R_START},
+    {R_CW_NEXT,  R_CW_BEGIN,  R_CW_FINAL,  R_START},
+    {R_CCW_NEXT, R_START,     R_CCW_BEGIN, R_START},
+    {R_CCW_NEXT, R_CCW_FINAL, R_START,     R_START | DIR_CCW},
+    {R_CCW_NEXT, R_CCW_FINAL, R_CCW_BEGIN, R_START},
 };
 ```
 
@@ -67,37 +76,25 @@ void TimerCallback(void* data)
     uint8_t a = g_enc_gpio_a.Read();
     uint8_t b = g_enc_gpio_b.Read();
 
-    // 2. Decode Gray Code
+    // 2. State Machine Rotary Encoder Decoder (zero hysteresis, detents at 11)
+    static uint8_t s_enc_state = R_START;
     static uint8_t s_prev_quad = 0x03;
     uint8_t curr_quad = (a << 1) | b;
     if(curr_quad != s_prev_quad)
     {
-        static const int8_t kQuadTable[16] = {
-             0, -1,  1,  0,
-             1,  0,  0, -1,
-            -1,  0,  0,  1,
-             0,  1, -1,  0
-        };
-        int8_t step = kQuadTable[(s_prev_quad << 2) | curr_quad];
-        if(step != 0)
-        {
-            static int8_t s_sub = 0;
-            s_sub += step;
-            // 4 transitions per detent click
-            if(s_sub >= 4)
-            {
-                g_enc_pos++;
-                g_last_inc = 1;
-                s_sub = 0;
-            }
-            else if(s_sub <= -4)
-            {
-                g_enc_pos--;
-                g_last_inc = -1;
-                s_sub = 0;
-            }
-        }
         s_prev_quad = curr_quad;
+        s_enc_state = kStateTable[s_enc_state & 0x0F][curr_quad];
+        uint8_t result = s_enc_state & 0x30;
+        if(result == DIR_CW)
+        {
+            g_enc_pos++;
+            g_last_inc = 1;
+        }
+        else if(result == DIR_CCW)
+        {
+            g_enc_pos--;
+            g_last_inc = -1;
+        }
     }
 
     // 3. Debounce Click Switch

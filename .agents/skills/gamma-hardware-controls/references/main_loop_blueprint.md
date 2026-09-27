@@ -86,25 +86,26 @@ void TimerCallback(void* data)
     // Encoder decoding
     uint8_t a = g_enc_gpio_a.Read();
     uint8_t b = g_enc_gpio_b.Read();
+    // Rotary Encoder State Machine (zero hysteresis, detents at 11)
+    static uint8_t s_enc_state = 0;
     static uint8_t s_prev_quad = 0x03;
     uint8_t curr_quad = (a << 1) | b;
     if(curr_quad != s_prev_quad)
     {
-        static const int8_t kQuadTable[16] = {
-             0, -1,  1,  0,
-             1,  0,  0, -1,
-            -1,  0,  0,  1,
-             0,  1, -1,  0
+        static const uint8_t kStateTable[7][4] = {
+            {0x0, 0x2, 0x4, 0x0},
+            {0x3, 0x0, 0x1, 0x0 | 0x10},
+            {0x3, 0x2, 0x0, 0x0},
+            {0x3, 0x2, 0x1, 0x0},
+            {0x6, 0x0, 0x4, 0x0},
+            {0x6, 0x5, 0x0, 0x0 | 0x20},
+            {0x6, 0x5, 0x4, 0x0},
         };
-        int8_t step = kQuadTable[(s_prev_quad << 2) | curr_quad];
-        if(step != 0)
-        {
-            static int8_t s_sub = 0;
-            s_sub += step;
-            if(s_sub >= 4)       { g_enc_pos++; g_last_inc = 1;  s_sub = 0; }
-            else if(s_sub <= -4) { g_enc_pos--; g_last_inc = -1; s_sub = 0; }
-        }
         s_prev_quad = curr_quad;
+        s_enc_state = kStateTable[s_enc_state & 0x0F][curr_quad];
+        uint8_t result = s_enc_state & 0x30;
+        if(result == 0x10)      { g_enc_pos++; g_last_inc = 1;  }
+        else if(result == 0x20) { g_enc_pos--; g_last_inc = -1; }
     }
 
     // Encoder Click
