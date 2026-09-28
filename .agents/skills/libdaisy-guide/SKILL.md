@@ -1,11 +1,12 @@
 ---
 name: libdaisy-guide
 description: >-
-  Comprehensive guide and architectural reference for developing firmware with libDaisy on the
-  Electro-Smith Daisy platform (ARM Cortex-M7 @ 480 MHz, STM32H750). Covers audio engine callbacks,
-  peripheral drivers (ADC, DAC, GPIO, I2C, SPI, UART, SAI, QSPI), human interface controls (pots,
-  switches, encoders, displays), memory sections (DTCM, SRAM1 DMA, SDRAM), Daisy Bootloader workflows,
-  Makefile/CMake integration, and real-time audio programming best practices.
+  Comprehensive guide and architectural reference for developing embedded audio firmware
+  with libDaisy on the Electro-Smith Daisy platform (ARM Cortex-M7 @ 480 MHz, STM32H750).
+  Use this skill whenever writing audio callbacks, implementing DSP synthesis, configuring
+  on-chip peripherals (ADC, DAC, GPIO, I2C, SPI, UART, SAI, QSPI), debugging STM32H7 memory
+  sections (DTCM, SRAM1 DMA, SDRAM), integrating with the Daisy Bootloader, or troubleshooting
+  audio glitches, cache incoherency, and build failures.
 ---
 
 # libDaisy Developer Guide & Architecture Reference
@@ -128,6 +129,16 @@ include $(LIBDAISY_DIR)/core/Makefile
 | **`BOOT_QSPI`** | Direct QSPI Flash execution | ~8 MB | `make program-dfu` |
 | **`BOOT_NONE`** | Internal Flash (`0x08000000`) | 128 KB | `make program-dfu` or OpenOCD |
 
+### 5.1 Build Verification & Flashing
+
+```bash
+# 1. Compile firmware and verify memory region allocations:
+make clean && make
+
+# 2. Flash application to device via USB DFU:
+make program-dfu
+```
+
 To install the Daisy Bootloader onto a fresh board:
 ```bash
 make program-boot
@@ -237,6 +248,5 @@ int main(void)
 ## 8. Cross-Reference Documentation
 
 * Detailed Architecture Guide: [`docs/LIBDAISY_GUIDE.md`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/docs/LIBDAISY_GUIDE.md)
-* Interactive Overview Artifact: [`libdaisy_overview.md`](file:///Users/brett/.gemini/antigravity/brain/5d1847e1-6cfe-446f-ab03-c560cbe1d9d8/libdaisy_overview.md)
 * libDaisy Source Tree: [`libDaisy/src/`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/libDaisy/src/)
 * libDaisy Examples: [`libDaisy/examples/`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/libDaisy/examples/)
