@@ -326,18 +326,36 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
      - Waveform indicator and last event log.
    - **USB CDC Diagnostics:** Non-blocking serial logging and commands (`'m'`/`'t'` toggle mode, `'w'` cycle waveform, `'b'` reboot to DFU bootloader).
 
-2. **MIDI TRS Output (Upcoming):**
-   - Test candidate hardware UART TX pin (`seed::D29` / `PB10` / `USART3_TX`). *(Note: `D14` / `PB7` was initially considered, but hardware testing confirmed `D14` is dedicated to Chord Key `C5`).*
-   - Transmit continuous MIDI Note On / Note Off messages at 31,250 baud to verify the 3.5mm MIDI Out jack.
+2. **Real-Time DSP Profiling (`CpuLoadMeter`):**
+   - Integrate `daisy::CpuLoadMeter` into the audio callback (`load_meter.OnBlockStart()` / `load_meter.OnBlockEnd()`) to track real-time DSP load margins and display on the OLED / USB serial console before expanding synthesis algorithms.
+
+3. **MIDI TRS Output (Upcoming):**
+   - Implement external MIDI transmission using libDaisy's native `MidiUartHandler` ([`libDaisy/src/hid/midi.h`](libDaisy/src/hid/midi.h)):
+     - Configure `MidiUartHandler::Config` for `USART_3` with TX pin on candidate `seed::D29` (`PB10` / `USART3_TX`) at standard 31,250 baud.
+     - *(Note: `D14` / `PB7` was initially considered, but hardware testing confirmed `D14` is dedicated to Chord Key `C5`).*
+   - Transmit continuous MIDI Note On / Note Off messages to verify the 3.5mm TRS MIDI Out jack.
+   - Verify electrical polarity across Tip vs. Ring (MIDI Association Type A standard vs. legacy Type B).
 
 ---
 
 ### Phase 6: Board Support Package (BSP) Synthesis
-**Goal:** Bundle all findings into a clean, reusable C++ library for developing custom firmware.
+**Goal:** Bundle all findings into a clean, reusable C++ library modeled after official libDaisy BSPs ([`DaisyPod`](libDaisy/src/daisy_pod.h), [`DaisyField`](libDaisy/src/daisy_field.h), [`DaisyPatch`](libDaisy/src/daisy_patch.h)).
 
-* **`gamma_pins.h`**: Comprehensive pin mapping enum and constant definitions.
-* **`gamma_hw.h` / `gamma_hw.cpp`**: Hardware abstraction class:
-  - `Gamma::Init()`
-  - `Gamma::ProcessInputs()`
-  - High-level accessors: `gamma.knob[i]`, `gamma.joystick_left.x`, `gamma.keys[i].Pressed()`, `gamma.encoder.Read()`.
-* **Example project**: Simple polyphonic synthesizer demonstrating full hardware utilization.
+* **`gamma_pins.h`**: Comprehensive pin mapping enum and constant definitions (located in [`.agents/skills/gamma-pinout/resources/gamma_pins.h`](.agents/skills/gamma-pinout/resources/gamma_pins.h)).
+* **`gamma_hw.h` / `gamma_hw.cpp`**: Unified hardware abstraction class (`Gamma`):
+  - **Embedded `DaisySeed seed;`** base instance.
+  - **Analog Controls:** 4 rotary knobs and 4 joystick axes encapsulated as `AnalogControl` objects with built-in IIR filtering, deadband rejection, and software inversion.
+  - **Parameter Curving:** Native `Parameter` helpers with `Parameter::Curve::EXPONENTIAL` for volume and filter cutoffs.
+  - **Digital Controls:** 14 `Switch` objects (7 note + 7 chord keys) and encoder click initialized with `Switch::Polarity::POLARITY_INVERTED`, sampled at 1 kHz.
+  - **Rotary Encoder:** Gray-code FSM quadrature decoding.
+  - **Display:** Pre-configured `OledDisplay<SSD130xI2c128x64Driver>` on `I2C1` @ `0x3D`.
+  - **MIDI:** Native `MidiUartHandler` integration for TRS MIDI Out.
+  - **Audio & Amplification:** Methods to control speaker mute (`PC3`), anti-pop sequencing, and audio stream routing.
+  - **Standardized BSP Control API:**
+    - `Gamma::Init(bool boost = false)`
+    - `Gamma::ProcessAnalogControls()`
+    - `Gamma::ProcessDigitalControls()`
+    - `Gamma::ProcessAllControls()`
+    - `Gamma::SetSpeakerMute(bool muted)`
+* **Preset Persistence:** Support user patch and configuration persistence via libDaisy's `PersistentStorage<T>` ([`libDaisy/src/util/PersistentStorage.h`](libDaisy/src/util/PersistentStorage.h)) targeting upper sectors of external QSPI flash (`IS25LP064A`).
+* **Example Project:** Polyphonic synthesizer reference application built directly on top of the Gamma BSP.
