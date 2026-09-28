@@ -152,8 +152,11 @@ Comprehensive architectural and implementation guides for the core software stac
 
 Operational runbooks, hardware specifications, and automated tooling are maintained as workspace skills:
 * **[Gamma Hardware Pinout & Peripheral Reference](.agents/skills/gamma-pinout/SKILL.md)**: Master pin mappings, electrical characteristics, ADC formulas, and C++ header.
+* **[Gamma Hardware Controls Guide](.agents/skills/gamma-hardware-controls/SKILL.md)**: Comprehensive guide for OLED display, keys, encoder, knobs, and joysticks.
 * **[Gamma Firmware Flashing](.agents/skills/gamma-firmware-flash/SKILL.md)**: Detailed runbook and automated polling script (`flash_firmware.py`).
 * **[Gamma Firmware Restore](.agents/skills/gamma-firmware-restore/SKILL.md)**: Detailed runbook and automated restore script (`restore_firmware.py`).
+* **[libDaisy Developer Guide](.agents/skills/libdaisy-guide/SKILL.md)**: Architectural reference and API guide for libDaisy hardware abstraction.
+* **[DaisySP Developer Guide](.agents/skills/daisysp-guide/SKILL.md)**: Architectural reference and DSP module catalog for DaisySP audio algorithms.
 
 ---
 
