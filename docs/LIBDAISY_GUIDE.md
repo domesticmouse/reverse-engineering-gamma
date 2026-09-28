@@ -28,30 +28,18 @@ At its core, `libDaisy` transforms high-performance ARM Cortex-M7 microcontrolle
 
 `libDaisy` sits at the base of Electro-Smith's software stack:
 
-```
-+-------------------------------------------------------------------+
-|         Higher-Level Frameworks & Tooling (Optional)              |
-|   Arduino | Max/MSP (gen~) | Pure Data (PlugData/Heavy) | Faust   |
-+---------------------------------+---------------------------------+
-                                  |
-+---------------------------------v---------------------------------+
-|             DaisySP (DSP & Synthesis Algorithm Library)           |
-| Oscillators, Filters, Delays, Envelopes, Physical Models, Reverbs |
-+---------------------------------+---------------------------------+
-                                  |
-+---------------------------------v---------------------------------+
-|               libDaisy (Hardware Abstraction & BSP)               |
-| Audio Engine, Peripheral Drivers, Board Definitions, HID, Memory  |
-+---------------------------------+---------------------------------+
-                                  |
-+---------------------------------v---------------------------------+
-|           Underlying Firmware & Silicon Vendor Libraries          |
-|    STM32CubeH7 HAL / LL  |  CMSIS 5 / CMSIS-DSP  |  Elm-Chan FatFs |
-+---------------------------------+---------------------------------+
-                                  |
-+---------------------------------v---------------------------------+
-|             Hardware: STM32H750 + QSPI + SDRAM + Codec            |
-+-------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    Frameworks["Higher-Level Frameworks & Tooling (Optional)\nArduino | Max/MSP (gen~) | Pure Data (PlugData/Heavy) | Faust"]
+    DaisySP["DaisySP (DSP & Synthesis Algorithm Library)\nOscillators, Filters, Delays, Envelopes, Physical Models, Reverbs"]
+    LibDaisy["libDaisy (Hardware Abstraction & BSP)\nAudio Engine, Peripheral Drivers, Board Definitions, HID, Memory"]
+    VendorLibs["Underlying Firmware & Silicon Vendor Libraries\nSTM32CubeH7 HAL / LL | CMSIS 5 / CMSIS-DSP | Elm-Chan FatFs"]
+    Hardware["Hardware Layer\nSTM32H750 + QSPI + SDRAM + Codec"]
+
+    Frameworks --> DaisySP
+    DaisySP --> LibDaisy
+    LibDaisy --> VendorLibs
+    VendorLibs --> Hardware
 ```
 
 * **libDaisy**: Handles all hardware interaction (audio I/O buffers, pin configuration, analog knobs, rotary encoders, displays, MIDI, USB, and file storage).
@@ -248,24 +236,18 @@ The `hid/` directory abstracts raw analog voltages and noisy digital pins into m
 
 The STM32H750IB utilizes a sophisticated multi-bus, multi-domain memory layout. Understanding this architecture is crucial for writing robust firmware.
 
-```
-+-------------------------------------------------------------------------+
-|                        STM32H750 Memory Map                             |
-+------------------------------------+------------------------------------+
-| Memory Region                      | Capacity & Characteristics         |
-+------------------------------------+------------------------------------+
-| ITCM-RAM (0x00000000)              | 64 KB (Zero-wait instruction RAM)  |
-| DTCM-RAM (0x20000000)              | 128 KB (Fastest data RAM, No DMA)  |
-| Internal Flash (0x08000000)        | 128 KB (Non-volatile, Flash code)  |
-| AXI SRAM (D1 Domain, 0x24000000)   | 512 KB (High-speed system RAM)     |
-| SRAM1 (D2 Domain, 0x30000000)      | 128 KB (Non-cached, DMA Buffers)   |
-| SRAM2 (D2 Domain, 0x30020000)      | 128 KB (Domain 2 general SRAM)     |
-| SRAM3 (D2 Domain, 0x30040000)      | 32 KB (Domain 2 buffers)           |
-| SRAM4 (D3 Domain, 0x38000000)      | 64 KB (Low-power backup domain)    |
-| External SDRAM (0xC0000000)        | 64 MB (High-capacity audio buffers)|
-| External QSPI Flash (0x90000000)   | 8 MB (Bootloader & Preset storage) |
-+------------------------------------+------------------------------------+
-```
+| Memory Region | Base Address | Capacity | Characteristics & Primary Usage |
+| :--- | :--- | :--- | :--- |
+| **ITCM-RAM** | `0x00000000` | 64 KB | Zero-wait instruction RAM |
+| **DTCM-RAM** | `0x20000000` | 128 KB | Fastest data RAM for DSP state (**No DMA access**) |
+| **Internal Flash** | `0x08000000` | 128 KB | Non-volatile flash code (`APP_TYPE = BOOT_NONE`) |
+| **AXI SRAM** (D1 Domain) | `0x24000000` | 512 KB | High-speed cached system RAM (`APP_TYPE = BOOT_SRAM`) |
+| **SRAM1** (D2 Domain) | `0x30000000` | 128 KB | **Non-cached** via MPU (`DMA_BUFFER_MEM_SECTION`), DMA buffers |
+| **SRAM2** (D2 Domain) | `0x30020000` | 128 KB | Domain 2 general SRAM |
+| **SRAM3** (D2 Domain) | `0x30040000` | 32 KB | Domain 2 buffers |
+| **SRAM4** (D3 Domain) | `0x38000000` | 64 KB | Low-power backup domain SRAM |
+| **External SDRAM** | `0xC0000000` | 64 MB | High-capacity audio buffers & delay lines (`DSY_SDRAM_BSS`) |
+| **External QSPI Flash** | `0x90000000` | 8 MB | Bootloader application binary (`0x90040000`) & preset storage |
 
 ### 5.1 Critical Architectural Rules & Pitfalls
 
