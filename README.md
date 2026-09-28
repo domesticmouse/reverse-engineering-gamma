@@ -9,15 +9,28 @@ The Gamma synth is powered by an embedded **Electro-Smith Daisy Seed 2 DFM** (AR
 ## Hardware Overview
 
 The Gamma features a compact, performance-oriented interface:
-* **Core:** Electro-Smith Daisy Seed 2 DFM
-* **Display:** 1.3" OLED display (suspected I2C / SSD1306 or SH1106)
-* **Keys:** 14 low-profile tactile keys (7 chord keys on the left, 7 note keys on the right)
-* **Thumbsticks:** 2 analog joysticks (Left X/Y, Right X/Y for modulation and chord alterations)
-* **Knobs:** 4 potentiometers (Chords Volume/Filter, Notes Volume/Filter)
-* **Encoder:** 1 rotary encoder with integrated push button (key/scale selection; 4-wire harness: shared GND + Phase A, Phase B, Push Switch)
-* **Audio:** 3.5mm stereo headphone output (driven by on-board PCM3060 codec via SAI)
-* **MIDI:** 3.5mm TRS MIDI output (UART TX)
-* **USB:** USB-C connector for power, DFU firmware flashing, and USB serial/MIDI communication
+* **Core:** Electro-Smith Daisy Seed 2 DFM (ARM Cortex-M7 @ 480 MHz, STM32H750IBK6, 128 KB internal flash, 1 MB RAM, 64 MB external QSPI flash)
+* **Display:** 1.3" 128x64 monochrome OLED display (Solomon Systech SSD1306 controller via `I2C1` on `seed::D11` / `PB8` [SCL] & `seed::D12` / `PB9` [SDA] at address `0x3D`)
+* **Keys:** 14 discrete low-profile tactile switches with internal pull-ups (active low):
+  * **Left Keypad (7 Note Keys):** `N1`–`N7` on `seed::D1`–`D7` (`PC11`, `PC10`, `PC9`, `PC8`, `PD2`, `PC12`, `PG10`)
+  * **Right Keypad (7 Chord Keys):** `C1`–`C7` on `seed::D8`–`D10`, `D13`, `D14`, `D26`, `D27` (`PG11`, `PB4`, `PB5`, `PB6`, `PB7`, `PD11`, `PG9`)
+* **Thumbsticks:** 2 dual-axis analog joysticks:
+  * **Left Stick (Pitch Bend / Resonance):** `LX` on `seed::D22` (`PA5` / `A7`), `LY` on `seed::D21` (`PC4` / `A6`, software inverted)
+  * **Right Stick (Pan / Modulation):** `RX` on `seed::D24` (`PA1` / `A9`, software inverted), `RY` on `seed::D23` (`PA4` / `A8`, software inverted)
+* **Knobs:** 4 rotary potentiometers across the top panel (`1.0 - raw` software inverted):
+  * **Left Pair (Chords):** Knob 1 / Chord Vol on `seed::D18` (`PA7` / `A3`), Knob 2 / Chord Filter on `seed::D17` (`PB1` / `A2`)
+  * **Right Pair (Notes):** Knob 3 / Notes Vol on `seed::D19` (`PA6` / `A4`), Knob 4 / Notes Filter on `seed::D20` (`PC1` / `A5`)
+* **Encoder:** 1 rotary encoder with integrated push switch for scale, waveform, and menu navigation:
+  * Phase A on `seed::D15` (`PC0`), Phase B on `seed::D16` (`PA3`), Push Switch on `seed::D28` (`PA2`, active low)
+  * 4 Gray-code transitions per detent click decoded with a Buxton finite-state machine
+* **Audio & Speakers:**
+  * **Headphone Jack:** 3.5mm stereo output driven by on-board Texas Instruments PCM3060 24-bit stereo codec via `SAI1` @ 48 kHz
+  * **Internal Speakers:** On-board Class-D amplifier driving stereo case speakers with hardware enable/mute on `seed::D32` (`PC3`, active high: `1`=On, `0`=Muted)
+* **Auxiliary ADC & Power Monitor:**
+  * **Aux ADC:** `seed::D31` (`PC2` / `A12`) auxiliary voltage / battery sense
+  * **Battery Low / Power Fault:** `seed::D0` (`PB12`, input pull-up, active low triggers factory "Charge Me!" alert)
+* **MIDI:** Class-compliant USB MIDI over USB-C using libDaisy `MidiUsbHandler` (no hardware 3.5mm TRS MIDI port)
+* **USB:** USB-C connector for power, DFU firmware flashing, USB CDC serial diagnostics, and USB MIDI (STM32 USB OTG FS; requires `vbus_sensing_enable = DISABLE` as 5V VBUS is not routed to `PA9`)
 
 ---
 
@@ -122,7 +135,7 @@ python3 .agents/skills/gamma-firmware-restore/scripts/restore_firmware.py
 
 If you prefer using a web browser:
 1. Navigate to the official [Gamma Update Tool](https://gammaupdatetool.netlify.app/).
-2. Expand **Troubleshooting** $\rightarrow$ **"Can't Enter Boot"**.
+2. Expand **Troubleshooting** → **"Can't Enter Boot"**.
 3. Click **"Connect & Install"**.
 4. Power cycle or tap **RESET** on the Gamma.
 5. Within the ~2-second boot window, select **"Daisy Bootloader"** and click **Connect**.
@@ -164,8 +177,13 @@ Operational runbooks, hardware specifications, and automated tooling are maintai
 
 - [x] **Toolchain & Software:** ARM toolchain (`arm-none-eabi-gcc 15.3.1`), `dfu-util 0.11`, `make`, and serial monitors (`tio`, `minicom`, `screen`) confirmed working.
 - [x] **Submodules:** `libDaisy` and `DaisySP` linked as Git submodules and compiled.
-- [x] **Phase 0 (Baseline Verification & Safety Net):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Factory firmware binaries (`gamma-v2.0.3.bin` and `gamma1_1.bin`) downloaded and verified. Automated restore skill created and tested.
-- [ ] **Phase 1 (Diagnostic Console & I2C Scan):** Diagnostic firmware developed (`firmware/phase1_i2c_scan`). Target architecture verified as `BOOT_SRAM` (`0x24000000`). Ready for flash via the flashing skill.
+- [x] **Phase 0 (Baseline Verification & Safety Net):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Factory firmware binaries (`gamma-v2.0.3.bin` and `gamma1_1.bin`) downloaded, analyzed via disassembly, and verified. Automated restore and flashing skills created and tested.
+- [x] **Phase 1 (Diagnostic Console & I2C Scan):** USB CDC virtual COM port established. Scanned candidate I2C peripherals and discovered SSD1306 OLED display responding on `I2C1` (`seed::D11`/`seed::D12`) at address `0x3D`.
+- [x] **Phase 2 (OLED Display Initialization & UI):** SSD1306 128x64 OLED display driver verified on hardware with real-time diagnostic dashboard and uptime rendering.
+- [x] **Phase 3 (Analog Pin Mapping):** All 4 potentiometers (`K0`–`K3` on `seed::D18`, `D17`, `D19`, `D20`) and 2 dual-axis joysticks (`LX`, `LY`, `RX`, `RY` on `seed::D22`, `D21`, `D24`, `D23`) mapped, calibrated, and verified on hardware with real-time OLED bargraphs.
+- [x] **Phase 4 (Digital Pin Mapping):** All 14 discrete tactile keys (7 note keys `N1`–`N7` on `seed::D1`–`D7`, 7 chord keys `C1`–`C7` on `seed::D8`–`D10`, `D13`, `D14`, `D26`, `D27`), rotary encoder quadrature pins (`seed::D15`, `seed::D16`) with Buxton FSM decoder, encoder click (`seed::D28`), speaker amp enable (`seed::D32` / `PC3`), and power fault sense (`seed::D0`) verified on hardware.
+- [ ] **Phase 5 (Audio & MIDI Verification - ACTIVE):** Stereo audio engine implemented (`firmware/phase5_audio`) using libDaisy & DaisySP with PCM3060 codec via SAI1 @ 48 kHz (interactive synth with 7 notes + 7 polyphonic triad chords, dual SVF filters, joystick modulation, test tone mode). Audio engine ready for hardware validation; USB MIDI device implementation upcoming.
+- [ ] **Phase 6 (Gamma Board Support Package):** Create unified `gamma_hw` C++ Board Support Package (BSP) and polyphonic synthesizer reference firmware.
 
 ---
 

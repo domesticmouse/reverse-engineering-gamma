@@ -349,7 +349,7 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
   - **Digital Controls:** 14 `Switch` objects (7 note + 7 chord keys) and encoder click initialized with `Switch::Polarity::POLARITY_INVERTED`, sampled at 1 kHz.
   - **Rotary Encoder:** Gray-code FSM quadrature decoding.
   - **Display:** Pre-configured `OledDisplay<SSD130xI2c128x64Driver>` on `I2C1` @ `0x3D`.
-  - **MIDI:** Native `MidiUartHandler` integration for TRS MIDI Out.
+  - **MIDI:** Native `MidiUsbHandler` integration for class-compliant USB MIDI.
   - **Audio & Amplification:** Methods to control speaker mute (`PC3`), anti-pop sequencing, and audio stream routing.
   - **Standardized BSP Control API:**
     - `Gamma::Init(bool boost = false)`
