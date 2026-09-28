@@ -7,3 +7,6 @@ build/
 *.o
 *.d
 *.lst
+
+# Python compile caches
+__pycache__/
