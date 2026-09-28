@@ -140,6 +140,14 @@ ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
 
 ---
 
+## Documentation & Developer Guides
+
+Comprehensive architectural and implementation guides for the core software stack:
+* **[Comprehensive Guide to libDaisy](docs/LIBDAISY_GUIDE.md)**: Hardware abstraction, STM32H750 memory layout, peripherals (ADC/DMA, I2C, SPI, SAI), audio engine, graphics canvas, and board support packages.
+* **[Comprehensive Guide to DaisySP](docs/DAISYSP_GUIDE.md)**: Digital Signal Processing library guide covering all 60+ synthesis, filter, effect, percussion, physical modeling, dynamics, and utility modules, lifecycle conventions, memory management, and practical DSP recipes.
+
+---
+
 ## Skills & Runbooks
 
 Operational runbooks, hardware specifications, and automated tooling are maintained as workspace skills:
