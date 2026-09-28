@@ -93,22 +93,22 @@ static const ChordDef kChords[7] = {
 // Audio Engine & DSP Voice Objects
 // ========================================================================
 // Note Synthesizer Voice
-static Oscillator g_note_osc;
-static Svf        g_note_filter;
-static float      g_note_target_amp = 0.0f;
-static float      g_note_curr_amp   = 0.0f;
-static int        g_active_note_idx = -1;
+static Oscillator     g_note_osc;
+static Svf            g_note_filter;
+static volatile float g_note_target_amp = 0.0f;
+static float          g_note_curr_amp   = 0.0f;
+static volatile int   g_active_note_idx = -1;
 
 // Chord Synthesizer Voice (3-oscillator polyphonic triad)
-static Oscillator g_chord_osc[3];
-static Svf        g_chord_filter;
-static float      g_chord_target_amp = 0.0f;
-static float      g_chord_curr_amp   = 0.0f;
-static int        g_active_chord_idx = -1;
+static Oscillator     g_chord_osc[3];
+static Svf            g_chord_filter;
+static volatile float g_chord_target_amp = 0.0f;
+static float          g_chord_curr_amp   = 0.0f;
+static volatile int   g_active_chord_idx = -1;
 
 // Diagnostic Test Tone Generator
-static Oscillator g_test_osc;
-static float      g_test_freq = 440.0f;
+static Oscillator     g_test_osc;
+static volatile float g_test_freq = 440.0f;
 
 // Operational Modes
 enum AudioMode {
@@ -116,7 +116,8 @@ enum AudioMode {
     MODE_TEST_TONE,
     MODE_LAST
 };
-static AudioMode g_current_mode = MODE_SYNTH;
+static volatile AudioMode g_current_mode      = MODE_SYNTH;
+static volatile bool      g_reboot_bootloader = false;
 
 // Waveform choices
 static const uint8_t kWaveforms[] = {
@@ -129,14 +130,12 @@ static const char* const kWaveNames[] = {
     "SINE", "TRI", "SAW", "SQR"
 };
 #define NUM_WAVEFORMS 4
-static int g_current_waveform = 2; // Default to Saw
+static volatile int g_current_waveform = 2; // Default to Saw
 
 // Peak VU Meters (0.0 to 1.0)
 static volatile float g_peak_left  = 0.0f;
 static volatile float g_peak_right = 0.0f;
 
-// ========================================================================
-// Controls & Physical Hardware Objects
 // ========================================================================
 // Controls & Physical Hardware Objects
 // ========================================================================
@@ -157,9 +156,9 @@ struct KeyEvent
     bool    pressed; // true = Press, false = Release
 };
 static constexpr size_t kEventQueueSize = 32;
-static KeyEvent         g_event_queue[kEventQueueSize];
-static volatile size_t  g_eq_head = 0;
-static volatile size_t  g_eq_tail = 0;
+static KeyEvent        g_event_queue[kEventQueueSize];
+static volatile size_t g_eq_head = 0;
+static volatile size_t g_eq_tail = 0;
 
 static inline void EnqueueKeyEvent(uint8_t id, bool pressed)
 {
@@ -168,6 +167,7 @@ static inline void EnqueueKeyEvent(uint8_t id, bool pressed)
     {
         g_event_queue[g_eq_head].id      = id;
         g_event_queue[g_eq_head].pressed = pressed;
+        __DSB(); // Ensure event data is written before head index advances
         g_eq_head                        = next;
     }
 }
@@ -177,18 +177,16 @@ static volatile uint8_t  g_raw_a           = 1;
 static volatile uint8_t  g_raw_b           = 1;
 static volatile uint32_t g_enc_transitions = 0;
 
-static float g_knobs[gamma_pins::knobs::COUNT]       = {0.5f, 0.5f, 0.5f, 0.5f};
-static float g_sticks[gamma_pins::joysticks::COUNT] = {0.5f, 0.5f, 0.5f, 0.5f};
+static volatile float g_knobs[gamma_pins::knobs::COUNT]       = {0.5f, 0.5f, 0.5f, 0.5f};
+static volatile float g_sticks[gamma_pins::joysticks::COUNT] = {0.5f, 0.5f, 0.5f, 0.5f};
 
 static char     g_last_event[36]  = "Ready - Speaker ON";
 static uint32_t g_last_event_time = 0;
 
-// Soft saturation curve (avoids harsh clipping, adds warm analog saturation)
+// Soft saturation curve using continuous daisysp::SoftClip (no step discontinuities)
 static inline float SoftSaturate(float x)
 {
-    if(x > 1.2f) return 1.0f;
-    if(x < -1.2f) return -1.0f;
-    return x - (x * x * x) * 0.166667f;
+    return daisysp::SoftClip(x);
 }
 
 // ========================================================================
@@ -297,8 +295,7 @@ void UsbRxCallback(uint8_t* buff, uint32_t* length)
         if(c == 'b' || c == 'B')
         {
             hw.PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
-            System::Delay(200);
-            System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT);
+            g_reboot_bootloader = true;
         }
         else if(c == 'm' || c == 'M' || c == 't' || c == 'T')
         {
@@ -354,20 +351,55 @@ void AudioCallback(AudioHandle::InputBuffer in,
     // LY: Filter resonance (0.05 to 0.75)
     float res = 0.05f + g_sticks[gamma_pins::joysticks::LEFT_Y] * 0.70f;
     // RX: Stereo pan (0.0 = full left, 1.0 = full right)
-    float pan_r = g_sticks[gamma_pins::joysticks::RIGHT_X];
-    float pan_l = 1.0f - pan_r;
+    float pan = g_sticks[gamma_pins::joysticks::RIGHT_X];
+    // Constant-power equal energy panning curve
+    float pan_l = cosf(pan * 1.5707963f);
+    float pan_r = sinf(pan * 1.5707963f);
 
     g_note_filter.SetFreq(note_cutoff);
     g_note_filter.SetRes(res);
     g_chord_filter.SetFreq(chord_cutoff);
     g_chord_filter.SetRes(res);
 
+    // Continuous 1 kHz pitch bend and voice frequency updates (unaffected by OLED refresh delays)
+    float pitch_bend = powf(2.0f, (g_sticks[gamma_pins::joysticks::LEFT_X] - 0.5f) * (4.0f / 12.0f));
+
+    int active_note = g_active_note_idx;
+    if(active_note >= 0 && active_note < (int)gamma_pins::note_keys::COUNT)
+    {
+        g_note_osc.SetFreq(kNoteFreqs[active_note] * pitch_bend);
+        g_note_target_amp = 1.0f;
+    }
+    else
+    {
+        g_note_target_amp = 0.0f;
+    }
+
+    int active_chord = g_active_chord_idx;
+    if(active_chord >= 0 && active_chord < (int)gamma_pins::chord_keys::COUNT)
+    {
+        g_chord_osc[0].SetFreq(kChords[active_chord].r * pitch_bend);
+        g_chord_osc[1].SetFreq(kChords[active_chord].t * pitch_bend);
+        g_chord_osc[2].SetFreq(kChords[active_chord].f * pitch_bend);
+        g_chord_target_amp = 1.0f;
+    }
+    else
+    {
+        g_chord_target_amp = 0.0f;
+    }
+
+    if(g_current_mode == MODE_TEST_TONE)
+    {
+        g_test_freq = 50.0f + g_knobs[gamma_pins::knobs::CHORD_FILTER] * 1950.0f;
+        g_test_osc.SetFreq(g_test_freq);
+    }
+
     float peak_l = 0.0f;
     float peak_r = 0.0f;
 
     for(size_t i = 0; i < size; i++)
     {
-        // Amplitude envelope smoothing (60 Hz slew rate to prevent clicks)
+        // Amplitude envelope smoothing (fast attack/release to prevent clicks)
         g_note_curr_amp  += 0.02f * (g_note_target_amp - g_note_curr_amp);
         g_chord_curr_amp += 0.02f * (g_chord_target_amp - g_chord_curr_amp);
 
@@ -399,8 +431,8 @@ void AudioCallback(AudioHandle::InputBuffer in,
 
             // Mix and Pan
             float mono_mix = note_sig + chord_sig;
-            out_l = SoftSaturate(mono_mix * (2.0f * pan_l));
-            out_r = SoftSaturate(mono_mix * (2.0f * pan_r));
+            out_l = SoftSaturate(mono_mix * pan_l);
+            out_r = SoftSaturate(mono_mix * pan_r);
         }
         else // MODE_TEST_TONE
         {
@@ -576,6 +608,8 @@ int main(void)
 {
     // 1. Initialize Daisy Seed 2 DFM (STM32H750 @ 480 MHz, PCM3060 codec via SAI1)
     hw.Init();
+    hw.SetAudioBlockSize(48); // 1 ms @ 48 kHz
+    hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
 
     // 2. Start USB CDC Logging (non-blocking)
     hw.StartLog(false);
@@ -684,10 +718,34 @@ int main(void)
     {
         uint32_t now = System::GetNow();
 
+        // Deferred DFU bootloader reboot (triggered from USB callback)
+        if(g_reboot_bootloader)
+        {
+            hw.PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
+            g_spk_en.Write(false); // Mute speaker amplifier before reset
+            System::Delay(200);
+            System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT);
+        }
+
+        // Check power fault / low battery monitor (PB12 active-LOW)
+        static bool s_last_fault = false;
+        bool pwr_fault = !g_pwr_fault.Read();
+        if(pwr_fault != s_last_fault)
+        {
+            s_last_fault = pwr_fault;
+            if(pwr_fault)
+            {
+                snprintf(g_last_event, sizeof(g_last_event), "LOW BATTERY / FAULT!");
+                g_last_event_time = now;
+                hw.PrintLine("[PWR] Battery Low / Power Fault Detected (PB12 = LOW)");
+            }
+        }
+
         // --- A. Drain Interrupt-Safe Key Event Ring Buffer ---
         while(g_eq_tail != g_eq_head)
         {
             KeyEvent ev = g_event_queue[g_eq_tail];
+            __DSB(); // Ensure read of event data before advancing tail pointer
             g_eq_tail   = (g_eq_tail + 1) % kEventQueueSize;
 
             if(ev.id < gamma_pins::note_keys::COUNT)
@@ -779,37 +837,9 @@ int main(void)
             g_sticks[i] += gamma_pins::joysticks::iir_coefficient * (raw_s - g_sticks[i]);
         }
 
-        // Test tone frequency adjustment via Knob 1 in test mode (50 Hz to 2000 Hz)
-        if(g_current_mode == MODE_TEST_TONE)
-        {
-            g_test_freq = 50.0f + g_knobs[gamma_pins::knobs::CHORD_FILTER] * 1950.0f;
-            g_test_osc.SetFreq(g_test_freq);
-        }
-
-        // --- C. Update Active Note & Chord Voices (Continuous Pitch Bend) ---
-        if(g_active_note_idx >= 0)
-        {
-            float pitch_bend = powf(2.0f, (g_sticks[gamma_pins::joysticks::LEFT_X] - 0.5f) * (4.0f / 12.0f));
-            g_note_osc.SetFreq(kNoteFreqs[g_active_note_idx] * pitch_bend);
-            g_note_target_amp = 1.0f;
-        }
-        else
-        {
-            g_note_target_amp = 0.0f;
-        }
-
-        if(g_active_chord_idx >= 0)
-        {
-            float pitch_bend = powf(2.0f, (g_sticks[gamma_pins::joysticks::LEFT_X] - 0.5f) * (4.0f / 12.0f));
-            g_chord_osc[0].SetFreq(kChords[g_active_chord_idx].r * pitch_bend);
-            g_chord_osc[1].SetFreq(kChords[g_active_chord_idx].t * pitch_bend);
-            g_chord_osc[2].SetFreq(kChords[g_active_chord_idx].f * pitch_bend);
-            g_chord_target_amp = 1.0f;
-        }
-        else
-        {
-            g_chord_target_amp = 0.0f;
-        }
+        // Note: Voice frequencies, continuous pitch bend (Left Stick X), and test tone
+        // frequencies are processed inside AudioCallback at 1 kHz block rate, ensuring
+        // jitter-free audio completely independent of OLED I2C update latency.
 
         // --- D. Rotary Encoder Processing ---
         int32_t cur_pos = g_enc_pos;
