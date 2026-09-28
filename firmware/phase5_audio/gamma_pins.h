@@ -158,10 +158,10 @@ namespace encoder
 // ============================================================================
 namespace system_pins
 {
-    // PC3: Internal Speaker Amplifier Enable / Mute (Active-HIGH)
+    // PC3 (seed::D32 / seed::A13 on Seed 2 DFM): Internal Speaker Amplifier Enable / Mute (Active-HIGH)
     // - Drive HIGH (1) to enable speaker amplifier
     // - Drive LOW (0) to mute / shutdown speaker amplifier (e.g. at boot)
-    constexpr daisy::Pin pin_speaker_en = daisy::Pin(daisy::PORTC, 3);
+    constexpr daisy::Pin pin_speaker_en = daisy::seed::D32;
 
     // PB12 (D0): Battery Low / Power Fault Monitor (Active-LOW w/ internal pull-up)
     // - Factory firmware prompts "Charge Me!" and halts audio when pulled LOW

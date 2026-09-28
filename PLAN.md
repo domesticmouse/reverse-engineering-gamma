@@ -329,12 +329,12 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
 2. **Real-Time DSP Profiling (`CpuLoadMeter`):**
    - Integrate `daisy::CpuLoadMeter` into the audio callback (`load_meter.OnBlockStart()` / `load_meter.OnBlockEnd()`) to track real-time DSP load margins and display on the OLED / USB serial console before expanding synthesis algorithms.
 
-3. **MIDI TRS Output (Upcoming):**
-   - Implement external MIDI transmission using libDaisy's native `MidiUartHandler` ([`libDaisy/src/hid/midi.h`](libDaisy/src/hid/midi.h)):
-     - Configure `MidiUartHandler::Config` for `USART_3` with TX pin on candidate `seed::D29` (`PB10` / `USART3_TX`) at standard 31,250 baud.
-     - *(Note: `D14` / `PB7` was initially considered, but hardware testing confirmed `D14` is dedicated to Chord Key `C5`).*
-   - Transmit continuous MIDI Note On / Note Off messages to verify the 3.5mm TRS MIDI Out jack.
-   - Verify electrical polarity across Tip vs. Ring (MIDI Association Type A standard vs. legacy Type B).
+3. **USB MIDI Device Implementation (Upcoming):**
+   - Implement class-compliant USB MIDI using libDaisy's native `MidiUsbHandler` ([`libDaisy/src/hid/midi.h`](libDaisy/src/hid/midi.h)):
+     - Configure `MidiUsbHandler::Config` for `MidiUsbTransport::Config::INTERNAL` (utilizing the internal USB-C connector on `PA11`/`PA12`).
+     - Note: Hardware has no 3.5mm TRS MIDI port; all MIDI communication is over USB-C.
+     - Transmit and receive MIDI Note On / Note Off / CC messages to/from a connected DAW or host.
+     - Verify interoperability with USB CDC serial diagnostics or run USB MIDI device profile.
 
 ---
 

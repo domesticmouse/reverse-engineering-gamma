@@ -61,10 +61,10 @@ A ready-to-use C++ header containing these definitions is available at:
 | **Rotary Encoder** | Phase A | `seed::D15` | `PC0` | GPIO In | Internal Pull-up | Quadrature Gray Code | Verified on Hardware |
 | **Rotary Encoder** | Phase B | `seed::D16` | `PA3` | GPIO In | Internal Pull-up | Quadrature Gray Code | Verified on Hardware |
 | **Rotary Encoder** | Push Button | `seed::D28` | `PA2` | GPIO In | Internal Pull-up | Active LOW (Pressed = 0) | Verified on Hardware |
-| **Speaker Amp En** | Speaker Enable/Mute | N/A | `PC3` | GPIO Out | Output Push-Pull | Active HIGH (`1`=On, `0`=Muted) | Verified on Hardware |
+| **Speaker Amp En** | Speaker Enable/Mute | `seed::D32` (`seed::A13`) | `PC3` | GPIO Out | Output Push-Pull | Active HIGH (`1`=On, `0`=Muted) | Verified on Hardware |
 | **Power Fault Sense** | Battery Low / Power Fault | `seed::D0` | `PB12` | GPIO In | Internal Pull-up | Active LOW ("Charge Me!") | Confirmed Disassembly |
 | **Audio Out** | Stereo DAC Out | Internal | Multiple | `SAI1` | PCM3060 Codec | 48 kHz / 24-bit Stereo | Internal Daisy routing |
-| **MIDI Out** | 3.5mm TRS MIDI | `seed::D29` (`PB10`) | `PB10` | Hardware UART TX | 31,250 baud | MIDI Serial (D14=C5 Key) | Testing in Phase 5 |
+| **MIDI** | USB-C MIDI (Class Compliant) | Internal | `PA11`/`PA12` | `USB_OTG_FS` | Full Speed USB Device | `MidiUsbHandler` (no 3.5mm MIDI) | Verified on Hardware |
 | **USB-C** | D+ / D- / Power | Internal | `PA11`/`PA12` | `USB_OTG_FS` | Full Speed Device | `vbus_sensing = DISABLE` | Verified on Hardware |
 
 ---
@@ -200,7 +200,8 @@ The rotary dial on the front panel is connected via a 4-wire harness:
 
 ## 7. Speaker Amplifier Enable & System Power GPIOs
 
-* **`PC3` (Speaker Amplifier Enable / Mute):**
+* **`seed::D32` / `PC3` (Speaker Amplifier Enable / Mute):**
+  * Defined in `libDaisy` as `seed::D32` (and alias `seed::A13` on Daisy Seed 2 DFM).
   * Configured as a GPIO Output push-pull.
   * Controls the shutdown/enable pin of the on-board Class-D speaker amplifier driving the internal case speakers.
   * **Polarity:** Active HIGH.
@@ -213,9 +214,12 @@ The rotary dial on the front panel is connected via a 4-wire harness:
 
 ---
 
-## 8. USB-C Interface & VBUS Sensing Discovery
+## 8. USB-C Interface & USB MIDI
 
-* **Port:** STM32 USB OTG FS (Full Speed, 12 Mbps)
+* **Port:** STM32 USB OTG FS (Full Speed, 12 Mbps) via internal `PA11` (D-) and `PA12` (D+).
+* **MIDI Implementation:** 
+  * The Gamma Mini Synth has **no hardware 3.5mm TRS MIDI port**. All MIDI communication is handled over the USB-C connector as a class-compliant USB MIDI device.
+  * In libDaisy, use `daisy::MidiUsbHandler` with `midi_cfg.transport_config.periph = daisy::MidiUsbTransport::Config::INTERNAL`. No discrete GPIO pins are required because it is handled by the MCU's internal USB OTG PHY.
 * **Crucial Hardware Trap (`vbus_sensing_enable`):**
   * Standard `libDaisy` firmware enables hardware VBUS sensing (`vbus_sensing_enable = ENABLE`), expecting a 5V sense voltage on pin `PA9` before activating the internal D+ pullup resistor.
   * The Gamma PCB **does not route 5V VBUS to `PA9`**.
