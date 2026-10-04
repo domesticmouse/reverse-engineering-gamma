@@ -87,10 +87,17 @@ inline float DecayCoef(float seconds, float sample_rate)
 class ActivityGate
 {
   public:
-    void  Wake() { active_ = true, quiet_samples_ = 0; }
+    void  Wake() { active_ = true; quiet_samples_ = 0; active_samples_ = 0; }
     bool  IsActive() const { return active_; }
     float Track(float s)
     {
+        if(!active_)
+            return 0.0f;
+        if(++active_samples_ > kMaxActiveSamples)
+        {
+            active_ = false;
+            return 0.0f;
+        }
         if(fabsf(s) > 1.0e-4f)
             quiet_samples_ = 0;
         else if(++quiet_samples_ > kQuietLimit)
@@ -99,14 +106,16 @@ class ActivityGate
     }
 
   private:
-    static constexpr uint32_t kQuietLimit = 4800; // 100 ms of near-silence
-    bool                      active_        = false;
-    uint32_t                  quiet_samples_ = 0;
+    static constexpr uint32_t kQuietLimit        = 4800;  // 100 ms of near-silence
+    static constexpr uint32_t kMaxActiveSamples = 72000; // 1.5 s maximum lifetime ceiling
+    bool                      active_            = false;
+    uint32_t                  quiet_samples_     = 0;
+    uint32_t                  active_samples_    = 0;
 };
 
 // ----------------------------------------------------------------------------
 // Kick: 808-style bridged-T resonator (AnalogBassDrum)
-//   Tune 30-120 Hz, Decay = resonator ring, Tone = click + attack FM punch
+//   Tune 30-90 Hz, Decay = resonator ring, Tone = click + attack FM punch
 // ----------------------------------------------------------------------------
 class Kick
 {
@@ -119,8 +128,8 @@ class Kick
     }
     void SetParams(float tune, float decay, float tone)
     {
-        bd_.SetFreq(LogMap(tune, 30.0f, 120.0f));
-        bd_.SetDecay(decay);
+        bd_.SetFreq(LogMap(tune, 30.0f, 90.0f));
+        bd_.SetDecay(decay * 0.85f);
         bd_.SetTone(tone);
         bd_.SetAttackFmAmount(0.1f + 0.6f * tone);
     }
@@ -134,32 +143,78 @@ class Kick
 };
 
 // ----------------------------------------------------------------------------
-// Tom: the same resonator model tuned higher with gentler FM
-//   Tune 70-300 Hz, Decay = ring, Tone = brightness / attack punch
+// Tom: punchy analog tom with exponential pitch drop and body decay.
+//   Replaces AnalogBassDrum whose SVF resonator enters perpetual undamped
+//   self-oscillation above 100 Hz and exhausts CPU / starves control ISRs.
+//   Tune 70-300 Hz, Decay 70-650 ms, Tone = pitch drop depth & attack punch
 // ----------------------------------------------------------------------------
 class Tom
 {
   public:
     void Init(float sr)
     {
-        bd_.Init(sr);
-        bd_.SetAccent(0.8f);
-        bd_.SetSelfFmAmount(0.1f);
+        sr_         = sr;
+        phase_      = 0.0f;
+        amp_env_    = 0.0f;
+        pitch_env_  = 0.0f;
+        click_env_  = 0.0f;
+        SetParams(0.40f, 0.50f, 0.40f);
     }
     void SetParams(float tune, float decay, float tone)
     {
-        bd_.SetFreq(LogMap(tune, 70.0f, 300.0f));
-        bd_.SetDecay(decay);
-        bd_.SetTone(tone);
-        bd_.SetAttackFmAmount(0.2f + 0.4f * tone);
+        base_freq_  = LogMap(tune, 70.0f, 300.0f);
+        amp_coef_   = DecayCoef(LogMap(decay, 0.07f, 0.65f), sr_);
+        pitch_coef_ = DecayCoef(0.022f, sr_); // Fast 22 ms pitch drop
+        click_coef_ = DecayCoef(0.005f, sr_); // 5 ms attack transient
+        fm_depth_   = 0.3f + 1.2f * tone;     // Pitch sweep depth
+        tone_       = tone;
     }
-    void  Trigger() { bd_.Trig(), gate_.Wake(); }
+    void Trigger()
+    {
+        amp_env_   = 1.0f;
+        pitch_env_ = 1.0f;
+        click_env_ = 1.0f;
+        phase_     = 0.0f;
+        gate_.Wake();
+    }
     bool  IsActive() const { return gate_.IsActive(); }
-    float Process() { return gate_.Track(bd_.Process()); }
+    float Process()
+    {
+        if(!IsActive())
+            return 0.0f;
+
+        // Pitch envelope sweeps down to base frequency
+        float inst_freq = base_freq_ * (1.0f + pitch_env_ * fm_depth_);
+        phase_ += inst_freq / sr_;
+        if(phase_ >= 1.0f)
+            phase_ -= 1.0f;
+
+        // Sine body with mild saturation for warm analog body
+        float body = sinf(phase_ * 6.2831853f);
+        body = body * (1.2f - 0.2f * body * body);
+
+        // Click / transient punch
+        float click = (phase_ < 0.5f ? 1.0f : -1.0f) * click_env_ * (0.1f + 0.35f * tone_);
+
+        float out = (body + click) * amp_env_;
+
+        // Decay envelopes
+        amp_env_   *= amp_coef_;
+        pitch_env_ *= pitch_coef_;
+        click_env_ *= click_coef_;
+
+        return gate_.Track(out);
+    }
 
   private:
-    AnalogBassDrum bd_;
-    ActivityGate   gate_;
+    float        sr_;
+    float        phase_;
+    float        base_freq_;
+    float        amp_env_, amp_coef_;
+    float        pitch_env_, pitch_coef_;
+    float        click_env_, click_coef_;
+    float        fm_depth_, tone_;
+    ActivityGate gate_;
 };
 
 // ----------------------------------------------------------------------------
