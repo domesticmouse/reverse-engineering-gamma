@@ -6,7 +6,7 @@
 // Controls
 //   Right keypad C1..C7 : Kick, Snare, Clap, Tom / Closed Hat, Open Hat, Cymbal
 //   Encoder turn        : Select the drum being edited (shown on OLED)
-//   Encoder click       : Audition the selected drum
+//   Encoder click       : Mute / unmute internal speaker
 //   Encoder hold 2 s    : Reboot into the Daisy bootloader for a firmware update
 //   Knobs 1..4          : Level, Tune, Decay, Tone of the selected drum
 //                         (soft takeover: a knob only takes effect once it
@@ -750,7 +750,9 @@ int main(void)
         if(g_enc_click_event)
         {
             g_enc_click_event = false;
-            RequestTrigger(g_selected);
+            g_speaker_enabled = !g_speaker_enabled;
+            g_spk_en.Write(g_speaker_enabled);
+            UsbLog::PrintLine("[SPK] Speaker %s", g_speaker_enabled ? "ON" : "MUTED");
         }
 
         // Analog controls

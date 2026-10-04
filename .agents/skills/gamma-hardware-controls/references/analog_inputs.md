@@ -127,3 +127,40 @@ void ReadAnalogControls(DaisySeed& hw)
     }
 }
 ```
+
+---
+
+## 5. Joystick Center Deadbands for Bipolar / Dual-Function Controls
+
+When mapping joystick axes to bipolar functions (such as pitch bend) or dual-mode split controls (such as a DJ master filter where pushing left engages a low-pass filter and pushing right engages a high-pass filter):
+
+> [!WARNING]
+> **Mechanical Resting Drift Hazard:**
+> Analog thumbstick return springs have a mechanical tolerance of $\pm 0.04$ to $\pm 0.07$ around the electrical center ($0.50$).
+> Using a narrow deadband (e.g., $0.45 - 0.55$) will frequently cause an untouched joystick resting at $0.56$ to engage the high-pass filter, completely cutting low-end bass and kick drums from the audio output.
+
+### Recommended Center Deadband ($\pm 0.08$)
+
+For center-bypassed split controls (like a master DJ filter on `RIGHT_X`), use a deadband of at least `0.42f` to `0.58f`:
+
+```cpp
+float rx   = g_sticks[gamma_pins::joysticks::RIGHT_X];
+int   mode = 0; // 0 = bypass, -1 = low-pass, +1 = high-pass
+float target_cut;
+
+if(rx < 0.42f)
+{
+    mode       = -1; // Low-pass mode
+    target_cut = LogMap(rx / 0.42f, 120.0f, 16000.0f);
+}
+else if(rx > 0.58f)
+{
+    mode       = 1;  // High-pass mode
+    target_cut = LogMap((rx - 0.58f) / 0.42f, 20.0f, 6000.0f);
+}
+else
+{
+    mode       = 0;  // Center deadzone: Filter bypassed
+    target_cut = 1000.0f;
+}
+```

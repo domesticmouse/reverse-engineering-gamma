@@ -208,6 +208,7 @@ The rotary dial on the front panel is connected via a 4-wire harness:
     * `0` (`LOW`): Speaker amplifier in shutdown / muted (`SPK OFF`).
     * `1` (`HIGH`): Speaker amplifier enabled (`SPK ON`).
   * **Anti-Pop Initialization Sequence:** Hold `PC3` LOW (`0`) during boot and peripheral setup. After starting the audio engine (`hw.StartAudio()`), delay $\approx 60\text{ ms}$ to allow DAC bias voltages to stabilize before driving `PC3` HIGH (`1`).
+  * **Standard UI Interaction:** Short-pressing the rotary encoder push switch (`seed::D28` / `PA2`) toggles `PC3` state (`g_speaker_enabled`), while the OLED header displays the current state (`SPK` vs `MUT`).
 * **`seed::D0` (`PB12` - Power Fault / Battery Low Monitor):**
   * Configured as a GPIO Input with internal pull-up.
   * Monitored by the main loop: when pulled LOW (`0`), factory firmware displays `"Charge Me!"` and halts audio output.

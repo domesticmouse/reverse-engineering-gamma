@@ -130,3 +130,71 @@ void InitEncoderTimer()
     g_timer.Start();
 }
 ```
+
+---
+
+## 5. Standard Push Switch Gestures (Short Click vs. Long Press)
+
+Across Gamma firmware (e.g. `phase5_audio`, `drum_synth`), the encoder push switch follows a standardized two-tier gesture convention:
+
+| Gesture | Threshold | Action | UI / Visual Feedback |
+| :--- | :--- | :--- | :--- |
+| **Short Click** | Release before $400\text{ ms}$ | **Toggle Speaker Mute** (`PC3` / `seed::D32`) | Header badge toggles `SPK` $\leftrightarrow$ `MUT` |
+| **Long Press** | Hold $\ge 2000\text{ ms}$ | **Reboot into DFU Bootloader** (`System::ResetToBootloader`) | Screen shows `HOLD FOR UPDATE` progress bar |
+
+### Implementation Pattern (Timer ISR + Main Loop)
+
+```cpp
+static constexpr uint32_t kDfuHoldMs  = 2000; // Hold time to trigger bootloader
+static constexpr uint32_t kDfuShowMs  = 400;  // Show progress bar on OLED
+static constexpr uint32_t kClickMaxMs = 400;  // Release before this = short click
+
+static volatile bool     g_enc_click_event   = false;
+static volatile bool     g_reboot_bootloader = false;
+static volatile uint32_t g_enc_hold_ms       = 0;
+
+// Inside 1 kHz TimerCallback:
+void HandleEncoderSwitch()
+{
+    static uint32_t s_held_ms   = 0;
+    static bool     s_dfu_fired = false;
+
+    g_enc_click.Debounce();
+    if(g_enc_click.Pressed())
+    {
+        if(s_held_ms < 0xFFFF)
+            s_held_ms++;
+        if(!s_dfu_fired && s_held_ms >= kDfuHoldMs)
+        {
+            s_dfu_fired         = true;
+            g_reboot_bootloader = true;
+        }
+    }
+    else
+    {
+        if(s_held_ms > 0 && s_held_ms < kClickMaxMs)
+            g_enc_click_event = true;
+        s_held_ms   = 0;
+        s_dfu_fired = false;
+    }
+    g_enc_hold_ms = s_held_ms;
+}
+
+// Inside Main Loop:
+if(g_enc_click_event)
+{
+    g_enc_click_event = false;
+    g_speaker_enabled = !g_speaker_enabled;
+    g_spk_en.Write(g_speaker_enabled);
+    UsbLog::PrintLine("[SPK] Speaker %s", g_speaker_enabled ? "ON" : "MUTED");
+}
+
+if(g_reboot_bootloader)
+{
+    g_spk_en.Write(false); // Mute speaker amplifier before reset
+    hw.StopAudio();
+    ShowBootloaderScreen();
+    System::Delay(200);
+    System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT);
+}
+```

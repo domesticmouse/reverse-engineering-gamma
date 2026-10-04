@@ -193,7 +193,19 @@ This reference document provides an exhaustive, parameter-by-parameter catalog o
 ### `AnalogBassDrum` (MIT)
 * **Header:** [`Drums/analogbassdrum.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/analogbassdrum.h)
 * **API:** `Init(sr)`, `SetFreq(f)`, `SetTone(t)`, `SetDecay(d)`, `SetAttackFmAmount(a)`, `SetSelfFmAmount(s)`, `SetSustain(bool)`, `SetAccent(a)`, `Trig()`, `Process(trigger_bool)`.
-* **Important Constraint:** In DaisySP, `AnalogBassDrum` calculates SVF resonance as $\text{res} = 0.4 \times q \times f$. At frequencies above $\approx 90\text{ Hz}$ or high decay values, $\text{res}$ clamps to $1.0$ (damping drops to $0.0$), throwing the model into perpetual self-oscillation that never decays. Furthermore, `Process()` calls `powf` and `sinf` per sample; an endlessly ringing voice will saturate the Cortex-M7 audio ISR and freeze control ISRs. Restrict `AnalogBassDrum` strictly to kick frequencies ($\le 90\text{ Hz}$) or use a dedicated pitch-swept sine oscillator + envelope model for higher pitched drums (e.g., toms). Always guard voice activity gates with a maximum active sample ceiling.
+* **Output Level & Frequency Caveats:**
+  * **Low Output Amplitude:** The raw output of `AnalogBassDrum` peaks at only $\approx 0.30$ during its initial 1 ms click transient, and its resonant sine body quickly drops to $\approx 0.034$ (RMS $\approx 0.032$, roughly $-20\text{ dBFS}$ relative to snare/tom models). It requires substantial make-up gain ($+15$ to $+20\text{ dB}$) when mixed with other drum voices.
+  * **Small Speaker / Audibility Hazard:** The bridged-T resonator produces a near-pure sine wave with virtually no upper harmonics. At typical kick fundamentals ($40 - 60\text{ Hz}$), it is practically inaudible on miniature built-in hardware speakers (whose acoustic roll-off is $>150\text{ Hz}$).
+  * **SVF Runaway Resonance:** SVF resonance is calculated as $\text{res} = 0.4 \times q \times f$. Above $\approx 90\text{ Hz}$ or with high decay values, $\text{res}$ saturates at $1.0$ (damping drops to $0.0$), causing perpetual undamped oscillation that starves control ISRs.
+* **Usage Guideline:** For punchy, modern kicks that project on built-in speakers and headphones, prefer [`SyntheticBassDrum`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/synthbassdrum.h) or add cubic saturation/drive and beater noise.
+
+### `SyntheticBassDrum` (MIT)
+* **Header:** [`Drums/synthbassdrum.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/synthbassdrum.h)
+* **API:** `Init(sr)`, `SetFreq(f)`, `SetTone(t)`, `SetDecay(d)`, `SetDirtiness(dirt)`, `SetFmEnvelopeAmount(fm)`, `SetFmEnvelopeDecay(fmd)`, `SetAccent(a)`, `Trig()`, `Process(trigger_bool)`.
+* **Acoustic Characteristics & Advantages:**
+  * **High Output Energy:** Modeled after a 909-style kick drum (distorted sine, transistor VCA, pitch FM envelope, click, and attack noise). Evaluates at $\approx 0.90$ peak and $\approx 0.38$ RMS ($+21\text{ dB}$ higher RMS energy than `AnalogBassDrum`), naturally balancing alongside snares and cymbals.
+  * **Harmonic Presence for Small Speakers:** The `SetDirtiness(dirt)` parameter controls a distorted sine shaper that injects rich odd harmonics into the body. These mid-frequency harmonics ($100 - 300\text{ Hz}$) remain clearly audible even on tiny onboard speakers.
+  * **Stable Oscillator:** Does not use the fragile SVF bridged-T resonator; completely immune to runaway self-oscillation across any tuning range ($40 - 200\text{ Hz}$).
 
 ### `AnalogSnareDrum` (MIT)
 * **Header:** [`Drums/analogsnaredrum.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/analogsnaredrum.h)
@@ -202,10 +214,6 @@ This reference document provides an exhaustive, parameter-by-parameter catalog o
 ### `HiHat` (MIT)
 * **Header:** [`Drums/hihat.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/hihat.h)
 * **API:** `Init(sr)`, `SetFreq(f)`, `SetTone(t)`, `SetDecay(d)`, `SetNoisiness(n)`, `SetAccent(a)`, `SetSustain(bool)`, `Process(trigger_bool)`.
-
-### `SyntheticBassDrum` (MIT)
-* **Header:** [`Drums/synthbassdrum.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/synthbassdrum.h)
-* **API:** `Init(sr)`, `SetFreq(f)`, `SetDirtiness(d)`, `SetFmEnvelopeAmount(fm)`, `SetFmEnvelopeDecay(fmd)`, `SetDecay(d)`, `Trig()`, `Process(trigger_bool)`.
 
 ### `SyntheticSnareDrum` (MIT)
 * **Header:** [`Drums/synthsnaredrum.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/synthsnaredrum.h)
