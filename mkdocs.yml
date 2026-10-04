@@ -1,0 +1,93 @@
+site_name: Reverse Engineering Gamma
+site_description: Documentation and Skills Reference for the this.is.NOISE Gamma Mini Synth (Daisy Seed 2 DFM)
+site_author: domesticmouse
+site_url: https://domesticmouse.github.io/reverse-engineering-gamma/
+
+repo_url: https://github.com/domesticmouse/reverse-engineering-gamma
+repo_name: domesticmouse/reverse-engineering-gamma
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+hooks:
+  - scripts/prepare_docs.py
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Skills:
+      - Overview: skills/index.md
+      - Hardware Pinout: skills/gamma-pinout/index.md
+      - Hardware Controls:
+          - Driver Overview: skills/gamma-hardware-controls/index.md
+          - Analog Inputs: skills/gamma-hardware-controls/references/analog_inputs.md
+          - Digital Keys: skills/gamma-hardware-controls/references/digital_keys.md
+          - OLED Display: skills/gamma-hardware-controls/references/display.md
+          - Rotary Encoder: skills/gamma-hardware-controls/references/rotary_encoder.md
+          - Main Loop Blueprint: skills/gamma-hardware-controls/references/main_loop_blueprint.md
+      - Firmware Flashing: skills/gamma-firmware-flash/index.md
+      - Firmware Restore: skills/gamma-firmware-restore/index.md
+      - USB Connectivity: skills/gamma-usb-connectivity/index.md
+      - DaisySP Guide:
+          - Overview: skills/daisysp-guide/index.md
+          - Module Catalog: skills/daisysp-guide/references/module_catalog.md
+          - Audio Recipes: skills/daisysp-guide/references/audio_recipes.md
+      - libDaisy Guide: skills/libdaisy-guide/index.md
+  - Architecture Guides:
+      - DaisySP Architecture: DAISYSP_GUIDE.md
+      - libDaisy Architecture: LIBDAISY_GUIDE.md
+      - Reverse Engineering Plan: PLAN.md

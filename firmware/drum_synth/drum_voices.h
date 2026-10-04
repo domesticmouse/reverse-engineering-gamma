@@ -219,31 +219,112 @@ class Tom
 };
 
 // ----------------------------------------------------------------------------
-// Snare: 808-style resonators + noise (AnalogSnareDrum)
-//   Tune 120-400 Hz, Decay = body/noise length, Tone = snappy (noise amount)
+// Snare: punchy analog snare with dual-mode body, snappy filtered noise, and stick click.
+//   Replaces AnalogSnareDrum whose SVF resonators entered perpetual undamped
+//   self-oscillation (damp = 0) and starved CPU (>100% when overlapping hits),
+//   causing audio DMA buffer underruns and harsh digital noise.
+//   Tune 120-350 Hz, Decay 70-550 ms, Tone = snappy noise level & filter brightness
 // ----------------------------------------------------------------------------
 class Snare
 {
   public:
     void Init(float sr)
     {
-        sd_.Init(sr);
-        sd_.SetAccent(0.8f);
-        sd_.SetTone(0.5f);
+        sr_ = sr;
+        noise_.Init();
+        noise_filt_.Init(sr);
+        noise_filt_.SetRes(0.25f);
+        phase_0_   = 0.0f;
+        phase_1_   = 0.0f;
+        body_env_  = 0.0f;
+        noise_env_ = 0.0f;
+        pitch_env_ = 0.0f;
+        click_env_ = 0.0f;
+        SetParams(0.45f, 0.40f, 0.60f);
     }
+
     void SetParams(float tune, float decay, float tone)
     {
-        sd_.SetFreq(LogMap(tune, 120.0f, 400.0f));
-        sd_.SetDecay(decay);
-        sd_.SetSnappy(tone);
+        base_freq_0_ = LogMap(tune, 120.0f, 350.0f);
+        base_freq_1_ = base_freq_0_ * 1.62f; // Second resonant mode
+
+        float body_decay_s  = LogMap(decay, 0.07f, 0.35f);
+        float noise_decay_s = LogMap(decay, 0.06f, 0.55f);
+
+        body_coef_  = DecayCoef(body_decay_s, sr_);
+        noise_coef_ = DecayCoef(noise_decay_s, sr_);
+        pitch_coef_ = DecayCoef(0.016f, sr_); // 16 ms pitch sweep
+        click_coef_ = DecayCoef(0.005f, sr_); // 5 ms attack click
+
+        snappy_ = tone;
+        tone_   = tone;
+        float noise_fc = LogMap(tone, 1400.0f, 5200.0f);
+        noise_filt_.SetFreq(noise_fc);
     }
-    void  Trigger() { sd_.Trig(), gate_.Wake(); }
-    bool  IsActive() const { return gate_.IsActive(); }
-    float Process() { return gate_.Track(sd_.Process()); }
+
+    void Trigger()
+    {
+        body_env_  = 1.0f;
+        noise_env_ = 1.0f;
+        pitch_env_ = 1.0f;
+        click_env_ = 1.0f;
+        phase_0_   = 0.0f;
+        phase_1_   = 0.0f;
+        gate_.Wake();
+    }
+
+    bool IsActive() const { return gate_.IsActive(); }
+
+    float Process()
+    {
+        if(!IsActive())
+            return 0.0f;
+
+        // Pitch envelope on fundamental
+        float inst_f0 = base_freq_0_ * (1.0f + 0.55f * pitch_env_);
+        phase_0_ += inst_f0 / sr_;
+        if(phase_0_ >= 1.0f)
+            phase_0_ -= 1.0f;
+
+        phase_1_ += base_freq_1_ / sr_;
+        if(phase_1_ >= 1.0f)
+            phase_1_ -= 1.0f;
+
+        // Dual-mode shell with warm analog saturation
+        float s0 = sinf(phase_0_ * 6.2831853f);
+        float s1 = sinf(phase_1_ * 6.2831853f);
+        float shell = (0.7f * s0 + 0.3f * s1) * body_env_;
+        shell = shell * (1.2f - 0.2f * shell * shell);
+
+        // Filtered snappy noise
+        noise_filt_.Process(noise_.Process());
+        float noise = (noise_filt_.Band() * (1.0f - 0.4f * tone_) + noise_filt_.High() * 0.5f * tone_) * noise_env_;
+
+        // Attack click
+        float click = (phase_0_ < 0.5f ? 1.0f : -1.0f) * click_env_ * 0.35f;
+
+        // Snappy mix
+        float out = (shell + click) * (1.0f - 0.55f * snappy_) + noise * (0.35f + 0.85f * snappy_);
+
+        // Decay envelopes
+        body_env_  *= body_coef_;
+        noise_env_ *= noise_coef_;
+        pitch_env_ *= pitch_coef_;
+        click_env_ *= click_coef_;
+
+        return gate_.Track(out);
+    }
 
   private:
-    AnalogSnareDrum sd_;
-    ActivityGate    gate_;
+    float        sr_;
+    WhiteNoise   noise_;
+    Svf          noise_filt_;
+    float        base_freq_0_, base_freq_1_;
+    float        phase_0_, phase_1_;
+    float        body_env_, noise_env_, pitch_env_, click_env_;
+    float        body_coef_, noise_coef_, pitch_coef_, click_coef_;
+    float        snappy_, tone_;
+    ActivityGate gate_;
 };
 
 // ----------------------------------------------------------------------------

@@ -70,14 +70,17 @@ def poll_and_flash(bin_path, timeout=60):
     sys.stdout.flush()
 
     import glob
+    import tty
     for dev in glob.glob("/dev/cu.usbmodem*"):
         try:
             print(f"[*] Detected USB CDC port {dev}, sending software DFU reboot command ('b')...")
-            fd = os.open(dev, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-            os.write(fd, b'b')
+            fd = os.open(dev, os.O_RDWR | os.O_NOCTTY)
+            tty.setraw(fd)
+            os.write(fd, b'b\r\n')
+            time.sleep(0.1)
             os.close(fd)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[*] Note: CDC trigger error: {e}")
 
     start_time = time.time()
     found = False

@@ -14,8 +14,8 @@ This skill documents how to interface with the **this.is.NOISE Gamma Mini Synth*
 It includes:
 1. **Hardware & USB CDC Architecture**: Device identifiers, Full-Speed peripheral configuration, and host port enumeration.
 2. **Deadlock Immunity & Real-Time Audio Protection**: Eliminating the blocking hazards inherent in standard libDaisy USB logging.
-3. **Firmware Sample Code**: Drop-in C++ driver [`gamma_usb.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-usb-connectivity/resources/gamma_usb.h) and implementation patterns.
-4. **Host Python Communication Script**: Zero-dependency cross-platform utility [`gamma_usb.py`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py) for testing, interactive control, monitoring, and DFU bootloader rebooting.
+3. **Firmware Sample Code**: Drop-in C++ driver [`gamma_usb.h`](resources/gamma_usb.h) and implementation patterns.
+4. **Host Python Communication Script**: Zero-dependency cross-platform utility [`gamma_usb.py`](scripts/gamma_usb.py) for testing, interactive control, monitoring, and DFU bootloader rebooting.
 
 ---
 
@@ -58,7 +58,7 @@ When the host transmits a byte to the synth, libDaisy invokes the registered `Us
 * **Rule**: The USB RX callback must **never** format or transmit data. It must only append incoming bytes into a lock-free ring buffer for consumption by the main thread.
 
 ### The Solution: Non-Blocking Multi-Buffer Pool with Timeout & Backoff
-The [`gamma_usb.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-usb-connectivity/resources/gamma_usb.h) driver resolves this with:
+The [`gamma_usb.h`](resources/gamma_usb.h) driver resolves this with:
 1. **Multi-Buffer TX Pool**: Rotates across 4 static buffers to avoid clobbering in-flight packets.
 2. **500 µs Maximum Wait**: If the host is not actively polling, TX drops after 500 µs rather than stalling the frame loop.
 3. **200 ms Fast-Fail Backoff**: If a transmission times out, subsequent print calls try once without waiting for 200 ms, preventing delay accumulation when no terminal is connected.
@@ -69,7 +69,7 @@ The [`gamma_usb.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gam
 ## 3. Firmware Integration & Sample Code
 
 ### Drop-In Header
-Copy [`gamma_usb.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-usb-connectivity/resources/gamma_usb.h) into your firmware directory:
+Copy [`gamma_usb.h`](resources/gamma_usb.h) into your firmware directory:
 
 ```cpp
 #include "daisy_seed.h"
@@ -152,7 +152,7 @@ int main(void)
 ## 4. Python Host Tool: `gamma_usb.py`
 
 The repository provides a standalone Python script located at:
-[`gamma_usb.py`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py)
+[`gamma_usb.py`](scripts/gamma_usb.py)
 
 It requires **no external packages** (uses POSIX `termios`/`select` on macOS and Linux) and automatically falls back to `pyserial` if installed.
 
@@ -197,8 +197,8 @@ python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --bootloader
 | Symptom | Probable Cause | Corrective Action |
 | :--- | :--- | :--- |
 | **Port `/dev/cu.usbmodem*` not appearing** | USB cable is power-only or device is in DFU mode | Verify data cable. Run `ioreg -p IOUSB -w0 -l` to check if `Daisy Seed External` (VID `0x0483`, PID `0x5740`) appears. |
-| **Port appears as `DFU in FS Mode`** | Device is in bootloader, not running application | Flash valid application firmware using [`gamma-firmware-flash`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-firmware-flash/SKILL.md). |
-| **Firmware hangs when USB host disconnects** | Firmware uses standard `daisy::Logger` | Replace `Logger<LOGGER_EXTERNAL>` with [`gamma_usb.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-usb-connectivity/resources/gamma_usb.h) or the non-blocking `UsbLog` struct. |
+| **Port appears as `DFU in FS Mode`** | Device is in bootloader, not running application | Flash valid application firmware using [`gamma-firmware-flash`](../gamma-firmware-flash/SKILL.md). |
+| **Firmware hangs when USB host disconnects** | Firmware uses standard `daisy::Logger` | Replace `Logger<LOGGER_EXTERNAL>` with [`gamma_usb.h`](resources/gamma_usb.h) or the non-blocking `UsbLog` struct. |
 | **Crash / HardFault on receiving USB byte** | Print/TX function called within `UsbRxCallback` | Buffer incoming characters into an ISR-safe queue and process them in the main `while(1)` loop. |
 | **Intermittent dropped characters** | RX buffer size too small | Increase `kRxQueueSize` in `gamma_usb.h` (default is 128 bytes). |
 | **`dfu-util` fails writing `0x90040000` after `'b'`** | Firmware called `System::ResetToBootloader()` with no argument and entered the STM32 ROM bootloader, not the Daisy bootloader | Use `UsbComm::RebootToBootloader()` or pass `System::DAISY_INFINITE_TIMEOUT`. If the device is stuck in ROM DFU, tap RESET to get back to the Daisy bootloader. |

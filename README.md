@@ -34,6 +34,19 @@ The Gamma features a compact, performance-oriented interface:
 
 ---
 
+## Documentation Website & Skills Reference
+
+The documentation website is hosted on GitHub Pages:
+👉 **[https://domesticmouse.github.io/reverse-engineering-gamma/](https://domesticmouse.github.io/reverse-engineering-gamma/)**
+
+The site is built with Material for MkDocs and automatically updated on each commit to the `main` branch via GitHub Actions:
+* **[Agent Skills Catalog](https://domesticmouse.github.io/reverse-engineering-gamma/skills/)**: Front-panel hardware drivers, pinout tables, firmware flashing runbooks, recovery workflows, and audio engine blueprints.
+* **[DaisySP Guide](https://domesticmouse.github.io/reverse-engineering-gamma/DAISYSP_GUIDE/)**: DSP synthesis modules, filters, dynamics, memory footprints, and audio recipes.
+* **[libDaisy Guide](https://domesticmouse.github.io/reverse-engineering-gamma/LIBDAISY_GUIDE/)**: STM32H750 HAL, memory sections (AXI SRAM, DTCM), DMA cache coherency, and audio engine architecture.
+* **[Reverse-Engineering Roadmap](https://domesticmouse.github.io/reverse-engineering-gamma/PLAN/)**: Step-by-step phase execution plan.
+
+---
+
 ## Reverse-Engineering Roadmap
 
 For the detailed step-by-step plan covering software setup, non-destructive flash dumping, diagnostic firmware probing, pin mapping, and BSP creation, see:

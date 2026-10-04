@@ -13,19 +13,19 @@ description: >-
 This skill documents how to interface with all front-panel user interface controls on the **this.is.NOISE Gamma Mini Synth**, powered by an embedded **Electro-Smith Daisy Seed 2 DFM** (ARM Cortex-M7 @ 480 MHz, STM32H750IBK6).
 
 It synthesizes findings, drivers, and timing architectures validated in:
-* [`firmware/phase3_adc`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/firmware/phase3_adc) (Analog Potentiometers, Joysticks & OLED Display)
-* [`firmware/phase4_keys_encoder`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/firmware/phase4_keys_encoder) (14 Tactile Keys, Rotary Encoder & 1 kHz Timer ISR)
+* [`firmware/phase3_adc`](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/firmware/phase3_adc) (Analog Potentiometers, Joysticks & OLED Display)
+* [`firmware/phase4_keys_encoder`](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/firmware/phase4_keys_encoder) (14 Tactile Keys, Rotary Encoder & 1 kHz Timer ISR)
 
 ---
 
 ## Pin Definitions & Header Location
 
-All hardware pin assignments, peripheral channel constants, and polarity inversion flags are centralized in the shared header provided by the [Gamma Pinout Skill](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-pinout/SKILL.md):
+All hardware pin assignments, peripheral channel constants, and polarity inversion flags are centralized in the shared header provided by the [Gamma Pinout Skill](../gamma-pinout/SKILL.md):
 
-* **Canonical Skill Header:** [`gamma-pinout/resources/gamma_pins.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-pinout/resources/gamma_pins.h)
+* **Canonical Skill Header:** [`gamma-pinout/resources/gamma_pins.h`](../gamma-pinout/resources/gamma_pins.h)
 * **Firmware Working Copies:**
-  * [`firmware/phase3_adc/gamma_pins.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/firmware/phase3_adc/gamma_pins.h)
-  * [`firmware/phase4_keys_encoder/gamma_pins.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/firmware/phase4_keys_encoder/gamma_pins.h)
+  * [`firmware/phase3_adc/gamma_pins.h`](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/firmware/phase3_adc/gamma_pins.h)
+  * [`firmware/phase4_keys_encoder/gamma_pins.h`](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/firmware/phase4_keys_encoder/gamma_pins.h)
 
 ---
 
@@ -85,5 +85,5 @@ Consult the detailed topical references below for full code snippets, electrical
 | **Right stick X moves opposite to Left stick** | PCB trace routing reversed on right stick | [Stick Polarities](references/analog_inputs.md#2-electrical-polarities--inversion-details) |
 | **Rotary encoder misses clicks while turning** | Main loop blocked by `oled.Update()` (9–23 ms) | [1 kHz Timer Architecture](references/rotary_encoder.md#3-the-display-blocking-hazard--1-khz-timer-isr) |
 | **Keys feel sluggish or drop quick presses** | Low polling rate in main loop | [1 kHz Key Debounce](references/digital_keys.md#2-key-debouncing--1-khz-sampling-architecture) |
-| **Synth locks up / note plays forever** | `libDaisy` `Logger` blocked in `TransmitSync` after terminal closed | [Gamma Pinout USB CDC](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-pinout/SKILL.md#8-usb-c-interface--usb-midi) |
+| **Synth locks up / note plays forever** | `libDaisy` `Logger` blocked in `TransmitSync` after terminal closed | [Gamma Pinout USB CDC](../gamma-pinout/SKILL.md#8-usb-c-interface--usb-midi) |
 | **Buttons and encoder stop responding / freeze** | Audio callback overload / runaway DSP voice starving TIM5 ISR (NVIC priority 15) | Avoid undamped DaisySP models (`AnalogBassDrum` > 90 Hz), gate idle voices, and enforce maximum lifetime ceilings on activity gates |
