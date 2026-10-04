@@ -349,8 +349,7 @@ sequenceDiagram
 ```
 
 | Module | Header | License | Description & Key Parameters |
-| :--- | :--- | :--- | :--- |
-| **`AnalogBassDrum`** | `Drums/analogbassdrum.h` | MIT | TR-808 kick drum model. Emulates bridged-T resonant network excited by narrow pulses. Parameters: base frequency (`SetFreq`), decay envelope (`SetDecay`), attack click punch (`SetTone`), pitch sweep depth, accent (`SetAccent`), and sustain mode (`SetSustain`). |
+| **`AnalogBassDrum`** | `Drums/analogbassdrum.h` | MIT | TR-808 kick drum model. Emulates bridged-T resonant network excited by narrow pulses. Parameters: base frequency (`SetFreq`), decay envelope (`SetDecay`), attack click punch (`SetTone`), pitch sweep depth, accent (`SetAccent`), and sustain mode (`SetSustain`). *Note: Due to SVF resonance scaling, frequencies > 90 Hz or high decay cause undamped self-oscillation and high CPU usage; keep $\le 90\text{ Hz}$ or use pitch-swept sine oscillators for toms.* |
 | **`AnalogSnareDrum`** | `Drums/analogsnaredrum.h` | MIT | TR-808/909 snare drum model. Emulates two tuned bridged-T resonators producing drumhead body resonance mixed with highpass-filtered noise burst. Parameters: `SetFreq`, `SetDecay`, `SetSnappy` (wire ratio), `SetTone`, `SetAccent`. |
 | **`HiHat`** | `Drums/hihat.h` | MIT | Roland TR-808 metallic percussion model. Synthesizes a cluster of 6 detuned square-wave Schmitt trigger oscillators (`SquareNoise`) or ring-modulated pairs (`RingModNoise`), routed through a bandpass SVF and dual-slope VCA envelope. Parameters: `SetFreq`, `SetTone`, `SetDecay`, `SetNoisiness`, `SetAccent`. |
 | **`SyntheticBassDrum`** | `Drums/synthbassdrum.h` | MIT | Modern digital EDM/dance kick voice. Utilizes fast FM pitch ramps, digital click exciters (`SyntheticBassDrumClick`), and attack noise bursts (`SyntheticBassDrumAttackNoise`). |

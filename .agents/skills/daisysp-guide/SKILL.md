@@ -126,6 +126,7 @@ float blep = ThisBlepSample(t);                    // PolyBLEP anti-aliasing ste
 | **Filter outputs silence** | `Svf::Process(in)` returns `void` | Multi-output filters require querying getter methods: `float out = flt.Low();`. |
 | **Linker error: undefined reference to `ReverbSc`** | Missing LGPL submodule build configuration | Add `USE_DAISYSP_LGPL = 1` to project `Makefile`, or pass `-DUSE_DAISYSP_LGPL`. |
 | **Wrong pitch or modulation rate** | Passing hardcoded sample rate (e.g. `48000`) | Always query the running hardware sample rate: `module.Init(hw.AudioSampleRate());`. |
+| **Synth freezes / controls drop out after drum hit** | `AnalogBassDrum` runaway resonance starving control ISRs | `AnalogBassDrum` scales SVF resonance by frequency ($\text{res} = 0.4 \times q \times f$). Above $\approx 90\text{ Hz}$, resonance clamps to $1.0$ (damping $= 0.0$), causing perpetual self-oscillation. Coupled with per-sample `powf`/`sinf` calls, the audio ISR saturates the CPU, starving the 1 kHz timer/main loop. Keep `AnalogBassDrum` $\le 90\text{ Hz}$ or use a pitch-swept sine + envelope for higher drums (toms). Always backstop voice activity gates with a maximum lifetime ceiling. |
 
 ---
 

@@ -193,6 +193,7 @@ This reference document provides an exhaustive, parameter-by-parameter catalog o
 ### `AnalogBassDrum` (MIT)
 * **Header:** [`Drums/analogbassdrum.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/analogbassdrum.h)
 * **API:** `Init(sr)`, `SetFreq(f)`, `SetTone(t)`, `SetDecay(d)`, `SetAttackFmAmount(a)`, `SetSelfFmAmount(s)`, `SetSustain(bool)`, `SetAccent(a)`, `Trig()`, `Process(trigger_bool)`.
+* **Important Constraint:** In DaisySP, `AnalogBassDrum` calculates SVF resonance as $\text{res} = 0.4 \times q \times f$. At frequencies above $\approx 90\text{ Hz}$ or high decay values, $\text{res}$ clamps to $1.0$ (damping drops to $0.0$), throwing the model into perpetual self-oscillation that never decays. Furthermore, `Process()` calls `powf` and `sinf` per sample; an endlessly ringing voice will saturate the Cortex-M7 audio ISR and freeze control ISRs. Restrict `AnalogBassDrum` strictly to kick frequencies ($\le 90\text{ Hz}$) or use a dedicated pitch-swept sine oscillator + envelope model for higher pitched drums (e.g., toms). Always guard voice activity gates with a maximum active sample ceiling.
 
 ### `AnalogSnareDrum` (MIT)
 * **Header:** [`Drums/analogsnaredrum.h`](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP/Source/Drums/analogsnaredrum.h)

@@ -168,10 +168,10 @@ ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
 
 | Key | Voice | Engine |
 | --- | --- | --- |
-| `C1` | Kick | 808-style bridged-T resonator (`AnalogBassDrum`), 30–120 Hz |
+| `C1` | Kick | 808-style bridged-T resonator (`AnalogBassDrum`), 30–90 Hz with resonance capping |
 | `C2` | Snare | 808-style resonators + noise (`AnalogSnareDrum`), 120–400 Hz |
 | `C3` | Clap | Band-passed noise with three "hand" bursts and a tail |
-| `C4` | Tom | Resonator model tuned higher (70–300 Hz) with gentler FM |
+| `C4` | Tom | Pitch-swept analog tom (70–300 Hz) with exponential decay and attack punch |
 | `C5` | Closed Hat | 808 metallic noise (`HiHat`) with custom envelope; chokes the open hat |
 | `C6` | Open Hat | 808 metallic noise with longer decay |
 | `C7` | Cymbal | 808 metallic noise with multi-second wash |
