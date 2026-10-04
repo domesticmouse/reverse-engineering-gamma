@@ -214,15 +214,15 @@ void AudioCallback(AudioHandle::InputBuffer in, AudioHandle::OutputBuffer out, s
     float rx   = g_sticks[gamma_pins::joysticks::RIGHT_X];
     int   mode = 0; // 0 = bypass, -1 = low-pass, +1 = high-pass
     float target_cut;
-    if(rx < 0.45f)
+    if(rx < 0.42f)
     {
         mode       = -1;
-        target_cut = LogMap(rx / 0.45f, 120.0f, 16000.0f);
+        target_cut = LogMap(rx / 0.42f, 120.0f, 16000.0f);
     }
-    else if(rx > 0.55f)
+    else if(rx > 0.58f)
     {
         mode       = 1;
-        target_cut = LogMap((rx - 0.55f) / 0.45f, 20.0f, 6000.0f);
+        target_cut = LogMap((rx - 0.58f) / 0.42f, 20.0f, 6000.0f);
     }
     else
     {

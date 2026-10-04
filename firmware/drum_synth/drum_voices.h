@@ -114,8 +114,8 @@ class ActivityGate
 };
 
 // ----------------------------------------------------------------------------
-// Kick: 808-style bridged-T resonator (AnalogBassDrum)
-//   Tune 30-90 Hz, Decay = resonator ring, Tone = click + attack FM punch
+// Kick: punchy synthetic bass drum (SyntheticBassDrum)
+//   Tune 40-130 Hz, Decay = body decay, Tone = transient click & dirtiness
 // ----------------------------------------------------------------------------
 class Kick
 {
@@ -123,23 +123,24 @@ class Kick
     void Init(float sr)
     {
         bd_.Init(sr);
-        bd_.SetAccent(0.8f);
-        bd_.SetSelfFmAmount(0.25f);
+        bd_.SetAccent(0.85f);
+        bd_.SetFmEnvelopeDecay(0.30f);
     }
     void SetParams(float tune, float decay, float tone)
     {
-        bd_.SetFreq(LogMap(tune, 30.0f, 90.0f));
-        bd_.SetDecay(decay * 0.85f);
+        bd_.SetFreq(LogMap(tune, 40.0f, 130.0f));
+        bd_.SetDecay(decay);
         bd_.SetTone(tone);
-        bd_.SetAttackFmAmount(0.1f + 0.6f * tone);
+        bd_.SetDirtiness(0.20f + 0.35f * tone);
+        bd_.SetFmEnvelopeAmount(0.40f + 0.50f * tone);
     }
     void  Trigger() { bd_.Trig(), gate_.Wake(); }
     bool  IsActive() const { return gate_.IsActive(); }
     float Process() { return gate_.Track(bd_.Process()); }
 
   private:
-    AnalogBassDrum bd_;
-    ActivityGate   gate_;
+    SyntheticBassDrum bd_;
+    ActivityGate      gate_;
 };
 
 // ----------------------------------------------------------------------------
