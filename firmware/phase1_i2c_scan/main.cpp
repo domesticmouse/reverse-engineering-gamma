@@ -7,6 +7,11 @@ using namespace daisy;
 
 DaisySeed hw;
 
+// The Gamma's USB-C connector is wired to the Seed's *external* USB pins (D29/D30 -> USB_OTG_HS
+// in FS mode), not the internal PA11/PA12 port used by DaisySeed::StartLog()/PrintLine().
+// Verified on hardware: OTG_FS never receives SOF frames, while the bootloader enumerates fine.
+using UsbLog = Logger<LOGGER_EXTERNAL>;
+
 // OLED driver configuration using SSD1306 128x64 on I2C1 (D11/D12)
 using MyOled = OledDisplay<SSD130xI2c128x64Driver>;
 static MyOled oled;
@@ -18,7 +23,51 @@ static char   g_detected_str[48]   = "Scanning...";
 static volatile bool g_request_scan = false;
 
 // Callback for USB CDC Serial inputs
+// USB CDC receive path.
+// UsbRxCallback runs inside the USB interrupt. It must NOT print: once a host terminal is
+// connected the logger switches to a blocking TransmitSync(), which waits for a TX-complete
+// interrupt that cannot fire while we are still inside the USB ISR -> permanent deadlock.
+// Received bytes are therefore queued here and handled from the main loop.
+static void HandleUsbBytes(uint8_t* buff, uint32_t* length);
+
+static constexpr size_t kRxQueueSize = 64;
+static volatile uint8_t g_rx_queue[kRxQueueSize];
+static volatile size_t  g_rx_head = 0;
+static volatile size_t  g_rx_tail = 0;
+
 void UsbRxCallback(uint8_t* buff, uint32_t* length)
+{
+    if(!buff || !length)
+        return;
+
+    for(uint32_t i = 0; i < *length; i++)
+    {
+        size_t next = (g_rx_head + 1) % kRxQueueSize;
+        if(next == g_rx_tail)
+            break; // Queue full: drop remaining bytes
+        g_rx_queue[g_rx_head] = buff[i];
+        __DSB();
+        g_rx_head = next;
+    }
+}
+
+// Drain queued bytes and dispatch them to HandleUsbBytes() from the main loop
+static void ProcessUsbCommands()
+{
+    uint8_t  local[kRxQueueSize];
+    uint32_t n = 0;
+    while(g_rx_tail != g_rx_head && n < kRxQueueSize)
+    {
+        local[n++] = g_rx_queue[g_rx_tail];
+        __DSB();
+        g_rx_tail = (g_rx_tail + 1) % kRxQueueSize;
+    }
+    if(n > 0)
+        HandleUsbBytes(local, &n);
+}
+
+// Command handler (called from the main loop via ProcessUsbCommands, never from the ISR)
+static void HandleUsbBytes(uint8_t* buff, uint32_t* length)
 {
     if(!buff || !length)
         return;
@@ -32,17 +81,17 @@ void UsbRxCallback(uint8_t* buff, uint32_t* length)
         }
         else if(c == 'b' || c == 'B')
         {
-            hw.PrintLine("\n*** Entering Daisy DFU Bootloader... ***\n");
+            UsbLog::PrintLine("\n*** Entering Daisy DFU Bootloader... ***\n");
             System::Delay(200);
             System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT);
         }
         else if(c == 'h' || c == 'H' || c == '?')
         {
-            hw.PrintLine("\n--- Available Commands ---");
-            hw.PrintLine("  s : Trigger I2C scan now");
-            hw.PrintLine("  b : Reboot into Daisy DFU Bootloader");
-            hw.PrintLine("  h : Show this help message");
-            hw.PrintLine("--------------------------\n");
+            UsbLog::PrintLine("\n--- Available Commands ---");
+            UsbLog::PrintLine("  s : Trigger I2C scan now");
+            UsbLog::PrintLine("  b : Reboot into Daisy DFU Bootloader");
+            UsbLog::PrintLine("  h : Show this help message");
+            UsbLog::PrintLine("--------------------------\n");
         }
     }
 }
@@ -133,9 +182,9 @@ static void DeinitI2CPins(const BusCandidate& bus)
 
 static void ScanSingleBus(const BusCandidate& bus, bool is_primary)
 {
-    hw.PrintLine("\n========================================================");
-    hw.PrintLine("Probing: %s", bus.name);
-    hw.PrintLine("========================================================");
+    UsbLog::PrintLine("\n========================================================");
+    UsbLog::PrintLine("Probing: %s", bus.name);
+    UsbLog::PrintLine("========================================================");
 
     if(bus.periph == I2CHandle::Config::Peripheral::I2C_1)
     {
@@ -160,7 +209,7 @@ static void ScanSingleBus(const BusCandidate& bus, bool is_primary)
     I2CHandle i2c;
     if(i2c.Init(cfg) != I2CHandle::Result::OK)
     {
-        hw.PrintLine("  [FAIL] Failed to initialize peripheral.");
+        UsbLog::PrintLine("  [FAIL] Failed to initialize peripheral.");
         return;
     }
 
@@ -173,7 +222,7 @@ static void ScanSingleBus(const BusCandidate& bus, bool is_primary)
     char found_list[48] = "";
     int  found_pos     = 0;
 
-    hw.PrintLine("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f");
+    UsbLog::PrintLine("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f");
 
     for(uint8_t row = 0; row < 128; row += 16)
     {
@@ -213,23 +262,23 @@ static void ScanSingleBus(const BusCandidate& bus, bool is_primary)
                 }
             }
         }
-        hw.PrintLine("%s", line_buf);
+        UsbLog::PrintLine("%s", line_buf);
     }
 
     if(found_count == 0)
     {
-        hw.PrintLine("  Result: No I2C devices detected on this configuration.");
+        UsbLog::PrintLine("  Result: No I2C devices detected on this configuration.");
     }
     else
     {
-        hw.PrintLine("  Result: %d device(s) detected!", found_count);
+        UsbLog::PrintLine("  Result: %d device(s) detected!", found_count);
         if(oled_3d_found)
         {
-            hw.PrintLine("  *** [OLED MATCH] SSD1306 OLED at 0x3D (matches factory firmware!) ***");
+            UsbLog::PrintLine("  *** [OLED MATCH] SSD1306 OLED at 0x3D (matches factory firmware!) ***");
         }
         if(oled_3c_found)
         {
-            hw.PrintLine("  *** [OLED MATCH] Display responded at alternate address 0x3C! ***");
+            UsbLog::PrintLine("  *** [OLED MATCH] Display responded at alternate address 0x3C! ***");
         }
     }
 
@@ -247,13 +296,13 @@ static void ScanSingleBus(const BusCandidate& bus, bool is_primary)
 
 static void RunAllBusScans()
 {
-    hw.PrintLine("\n>>> STARTING I2C CANDIDATE BUS SCAN <<<");
+    UsbLog::PrintLine("\n>>> STARTING I2C CANDIDATE BUS SCAN <<<");
     for(size_t i = 0; i < sizeof(kCandidates) / sizeof(kCandidates[0]); i++)
     {
         ScanSingleBus(kCandidates[i], i == 0);
         System::Delay(50);
     }
-    hw.PrintLine("\n>>> SCAN COMPLETE <<<\n");
+    UsbLog::PrintLine("\n>>> SCAN COMPLETE <<<\n");
 }
 
 static void InitOled()
@@ -308,16 +357,16 @@ int main(void)
     hw.Init();
 
     // Start USB CDC Serial logging (non-blocking)
-    hw.StartLog(false);
+    UsbLog::StartLog(false);
 
     // Register USB CDC receive callback for commands
-    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_INTERNAL);
+    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_EXTERNAL);
 
-    hw.PrintLine("\n\n========================================================");
-    hw.PrintLine("  Gamma Mini Synth Diagnostic Console - Phase 1");
-    hw.PrintLine("  Electro-Smith Daisy Seed 2 DFM (STM32H750 + PCM3060)");
-    hw.PrintLine("========================================================");
-    hw.PrintLine("Send 's' for scan, 'b' for DFU bootloader, 'h' for help.\n");
+    UsbLog::PrintLine("\n\n========================================================");
+    UsbLog::PrintLine("  Gamma Mini Synth Diagnostic Console - Phase 1");
+    UsbLog::PrintLine("  Electro-Smith Daisy Seed 2 DFM (STM32H750 + PCM3060)");
+    UsbLog::PrintLine("========================================================");
+    UsbLog::PrintLine("Send 's' for scan, 'b' for DFU bootloader, 'h' for help.\n");
 
     uint32_t last_scan_time   = 0;
     uint32_t last_blink_time  = System::GetNow();
@@ -328,6 +377,9 @@ int main(void)
     while(1)
     {
         uint32_t now = System::GetNow();
+
+        // Handle USB CDC commands queued by UsbRxCallback (safe to print here)
+        ProcessUsbCommands();
 
         // Heartbeat LED always blinks at 2Hz (toggle every 250ms)
         if(now - last_blink_time >= 250)
@@ -344,7 +396,7 @@ int main(void)
             g_request_scan = false;
             last_scan_time = now;
 
-            hw.PrintLine("\n[Uptime: %lu ms]", (unsigned long)now);
+            UsbLog::PrintLine("\n[Uptime: %lu ms]", (unsigned long)now);
             RunAllBusScans();
 
             // Initialize OLED now that primary bus is probed

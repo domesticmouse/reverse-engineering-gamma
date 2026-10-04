@@ -196,6 +196,9 @@ if (btn.RisingEdge())
 
 ### 6.3 USB CDC Serial Logging
 
+> [!IMPORTANT]
+> **Gamma:** the USB-C jack is wired to the Seed's *external* USB port (`D29`/`D30`). `hw.StartLog()` / `hw.PrintLine()` target the internal port and never enumerate. Use `using UsbLog = Logger<LOGGER_EXTERNAL>;` with `UsbLog::StartLog()` / `UsbLog::PrintLine()` and `UsbHandle::FS_EXTERNAL`. Never print from a USB receive callback (ISR deadlock) — see the `gamma-pinout` skill §8.
+
 ```cpp
 hw.Init();
 hw.StartLog(false); // true to block until a PC serial terminal connects

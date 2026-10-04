@@ -133,7 +133,9 @@ void TimerCallback(void* data)
 int main(void)
 {
     hw.Init();
-    hw.StartLog(false);
+    // Gamma USB-C is on the Seed's external USB port: use Logger<LOGGER_EXTERNAL>, not hw.StartLog()
+    // (declare once at file scope: using UsbLog = Logger<LOGGER_EXTERNAL>;)
+    UsbLog::StartLog(false);
 
     // 1. Speaker Amplifier Enable (PC3) - Hold LOW at startup to prevent pop
     GPIO spk_en;

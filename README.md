@@ -30,7 +30,7 @@ The Gamma features a compact, performance-oriented interface:
   * **Aux ADC:** `seed::D31` (`PC2` / `A12`) auxiliary voltage / battery sense
   * **Battery Low / Power Fault:** `seed::D0` (`PB12`, input pull-up, active low triggers factory "Charge Me!" alert)
 * **MIDI:** Class-compliant USB MIDI over USB-C using libDaisy `MidiUsbHandler` (no hardware 3.5mm TRS MIDI port)
-* **USB:** USB-C connector for power, DFU firmware flashing, USB CDC serial diagnostics, and USB MIDI (STM32 USB OTG FS; requires `vbus_sensing_enable = DISABLE` as 5V VBUS is not routed to `PA9`)
+* **USB:** USB-C connector for power, DFU firmware flashing, USB CDC serial diagnostics, and USB MIDI. Wired to the Seed's **external** USB port (`seed::D29`/`seed::D30` = `PB14`/`PB15`, `USB_OTG_HS` in Full Speed mode) — use `UsbHandle::FS_EXTERNAL` / `Logger<LOGGER_EXTERNAL>`, not `hw.StartLog()`
 
 ---
 

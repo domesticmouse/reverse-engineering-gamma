@@ -9,6 +9,11 @@ using namespace daisy;
 
 DaisySeed hw;
 
+// The Gamma's USB-C connector is wired to the Seed's *external* USB pins (D29/D30 -> USB_OTG_HS
+// in FS mode), not the internal PA11/PA12 port used by DaisySeed::StartLog()/PrintLine().
+// Verified on hardware: OTG_FS never receives SOF frames, while the bootloader enumerates fine.
+using UsbLog = Logger<LOGGER_EXTERNAL>;
+
 // ========================================================================
 // OLED Display Setup (SSD1306 128x64 on I2C1, D11/D12 @ 0x3D)
 // ========================================================================
@@ -63,7 +68,51 @@ static char     g_last_event[32]  = "Ready";
 static uint32_t g_last_event_time = 0;
 
 // Callback for USB CDC Serial inputs
+// USB CDC receive path.
+// UsbRxCallback runs inside the USB interrupt. It must NOT print: once a host terminal is
+// connected the logger switches to a blocking TransmitSync(), which waits for a TX-complete
+// interrupt that cannot fire while we are still inside the USB ISR -> permanent deadlock.
+// Received bytes are therefore queued here and handled from the main loop.
+static void HandleUsbBytes(uint8_t* buff, uint32_t* length);
+
+static constexpr size_t kRxQueueSize = 64;
+static volatile uint8_t g_rx_queue[kRxQueueSize];
+static volatile size_t  g_rx_head = 0;
+static volatile size_t  g_rx_tail = 0;
+
 void UsbRxCallback(uint8_t* buff, uint32_t* length)
+{
+    if(!buff || !length)
+        return;
+
+    for(uint32_t i = 0; i < *length; i++)
+    {
+        size_t next = (g_rx_head + 1) % kRxQueueSize;
+        if(next == g_rx_tail)
+            break; // Queue full: drop remaining bytes
+        g_rx_queue[g_rx_head] = buff[i];
+        __DSB();
+        g_rx_head = next;
+    }
+}
+
+// Drain queued bytes and dispatch them to HandleUsbBytes() from the main loop
+static void ProcessUsbCommands()
+{
+    uint8_t  local[kRxQueueSize];
+    uint32_t n = 0;
+    while(g_rx_tail != g_rx_head && n < kRxQueueSize)
+    {
+        local[n++] = g_rx_queue[g_rx_tail];
+        __DSB();
+        g_rx_tail = (g_rx_tail + 1) % kRxQueueSize;
+    }
+    if(n > 0)
+        HandleUsbBytes(local, &n);
+}
+
+// Command handler (called from the main loop via ProcessUsbCommands, never from the ISR)
+static void HandleUsbBytes(uint8_t* buff, uint32_t* length)
 {
     if(!buff || !length)
         return;
@@ -73,16 +122,16 @@ void UsbRxCallback(uint8_t* buff, uint32_t* length)
         char c = (char)buff[i];
         if(c == 'b' || c == 'B')
         {
-            hw.PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
+            UsbLog::PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
             System::Delay(200);
             System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT);
         }
         else if(c == 'h' || c == 'H' || c == '?')
         {
-            hw.PrintLine("\n--- Phase 3 Diagnostic Commands ---");
-            hw.PrintLine("  b : Reboot into Daisy DFU Bootloader");
-            hw.PrintLine("  h : Show this help message");
-            hw.PrintLine("-----------------------------------\n");
+            UsbLog::PrintLine("\n--- Phase 3 Diagnostic Commands ---");
+            UsbLog::PrintLine("  b : Reboot into Daisy DFU Bootloader");
+            UsbLog::PrintLine("  h : Show this help message");
+            UsbLog::PrintLine("-----------------------------------\n");
         }
     }
 }
@@ -208,14 +257,14 @@ int main(void)
     hw.Init();
 
     // Start USB CDC logging (non-blocking)
-    hw.StartLog(false);
-    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_INTERNAL);
+    UsbLog::StartLog(false);
+    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_EXTERNAL);
 
-    hw.PrintLine("\n\n========================================================");
-    hw.PrintLine("  Gamma Mini Synth Diagnostic Console - Phase 3");
-    hw.PrintLine("  Analog Inputs: 4 Potentiometers + 2 Dual-Axis Joysticks");
-    hw.PrintLine("========================================================");
-    hw.PrintLine("Send 'b' to reboot into DFU Bootloader.\n");
+    UsbLog::PrintLine("\n\n========================================================");
+    UsbLog::PrintLine("  Gamma Mini Synth Diagnostic Console - Phase 3");
+    UsbLog::PrintLine("  Analog Inputs: 4 Potentiometers + 2 Dual-Axis Joysticks");
+    UsbLog::PrintLine("========================================================");
+    UsbLog::PrintLine("Send 'b' to reboot into DFU Bootloader.\n");
 
     // Initialize OLED Display
     InitOled();
@@ -238,7 +287,7 @@ int main(void)
     hw.adc.Init(adc_cfg, NUM_ADC_CHANNELS);
     hw.adc.Start();
 
-    hw.PrintLine("ADC and OLED initialized successfully.");
+    UsbLog::PrintLine("ADC and OLED initialized successfully.");
 
     uint32_t last_blink_time  = System::GetNow();
     uint32_t last_screen_time = System::GetNow();
@@ -251,6 +300,9 @@ int main(void)
     while(1)
     {
         uint32_t now = System::GetNow();
+
+        // Handle USB CDC commands queued by UsbRxCallback (safe to print here)
+        ProcessUsbCommands();
 
         // 1. Read Potentiometer Knobs (0..3) with inversion from gamma_pins
         for(size_t i = 0; i < gamma_pins::knobs::COUNT; i++)
@@ -271,7 +323,7 @@ int main(void)
                     prev_knobs[i] = g_knobs[i];
                     snprintf(g_last_event, sizeof(g_last_event), "%s: %d%%", kKnobNames[i], (int)(g_knobs[i] * 99.0f));
                     g_last_event_time = now;
-                    hw.PrintLine("[ADC] Knob %s: %.3f (%d%%)", kKnobNames[i], g_knobs[i], (int)(g_knobs[i] * 100.0f));
+                    UsbLog::PrintLine("[ADC] Knob %s: %.3f (%d%%)", kKnobNames[i], g_knobs[i], (int)(g_knobs[i] * 100.0f));
                 }
             }
         }
@@ -294,7 +346,7 @@ int main(void)
                     prev_sticks[i] = g_sticks[i];
                     snprintf(g_last_event, sizeof(g_last_event), "%s: %d%%", kStickNames[i], (int)(g_sticks[i] * 99.0f));
                     g_last_event_time = now;
-                    hw.PrintLine("[ADC] Stick %s: %.3f (%d%%)", kStickNames[i], g_sticks[i], (int)(g_sticks[i] * 100.0f));
+                    UsbLog::PrintLine("[ADC] Stick %s: %.3f (%d%%)", kStickNames[i], g_sticks[i], (int)(g_sticks[i] * 100.0f));
                 }
             }
         }

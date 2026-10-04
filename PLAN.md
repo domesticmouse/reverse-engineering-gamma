@@ -81,7 +81,7 @@ The complete pin mapping, electrical specifications, and peripheral configuratio
 | **Speaker Amp En** | Internal speaker amplifier enable / mute | `PC3` (GPIO Out, Active HIGH: `1`=On, `0`=Muted) | **Verified on Hardware** |
 | **Audio Output** | 3.5mm stereo headphone jack | On-board PCM3060 codec via SAI | Internal Daisy routing |
 | **MIDI Output** | 3.5mm TRS MIDI Out | Hardware UART TX @ 31,250 baud | In progress |
-| **USB-C** | Power, flashing (DFU), USB Serial/MIDI | STM32 USB OTG FS (`vbus_sensing_enable = DISABLE`) | **Verified on Hardware** |
+| **USB-C** | Power, flashing (DFU), USB Serial/MIDI | Seed external USB port (`D29`/`D30` = `PB14`/`PB15`, `USB_OTG_HS` in FS mode, `FS_EXTERNAL`) | **Verified on Hardware** |
 
 ---
 
@@ -135,11 +135,13 @@ flowchart TD
      - **Daisy Bootloader Infinite Timeout (Gamma Menu `System -> Info -> Enter Boot`):** Sets `DAISY_INFINITE_TIMEOUT` in Backup SRAM (`0x38800000`) and soft-resets into the Daisy Bootloader, holding DFU mode indefinitely without timing out.
    - **Clock Initialization Traps:**
      - The Daisy Bootloader initializes the system PLL to 480 MHz before jumping to SRAM. In `daisy_seed.cpp`, `syscfg.skip_clocks` must remain `true` for SRAM builds. Re-configuring the active PLL in application code traps in `Error_Handler()` and freezes SysTick.
-   - **USB CDC Enumeration & VBUS Sensing Discovery:**
-     - Disassembly of official production firmware (`gamma-v2.0.3.bin` at `0x24029c78`) revealed that `hpcd_USB_OTG_FS.Init.vbus_sensing_enable` is set to **`DISABLE` (`0`)**.
-     - Upstream `libDaisy` defaults `vbus_sensing_enable` to `ENABLE` (`1`), requiring 5V on pin `PA9` to activate the internal D+ pullup resistor. Because Gamma does not route 5V VBUS to `PA9`, STM32 detects "cable disconnected" and never pulls up D+.
-     - Patched [`libDaisy/src/usbd/usbd_conf.c`](libDaisy/src/usbd/usbd_conf.c) to set `vbus_sensing_enable = DISABLE`.
-     - When launching from the bootloader, `syscfg.skip_clocks` is set, which leaves `HSI48` and `RCC_USBCLKSOURCE_HSI48` uninitialized unless explicitly enabled in application code.
+     - *Correction (2026-10-04):* `DaisySeed::Init()` only sets `skip_clocks` for bootloaders older than v6.0. The Gamma's bootloader reports `Version::v6_1`, so stock libDaisy **does** run its full clock configuration on every boot, and phases 1–5 run correctly with it. The trap above applies only to hand-written PLL reconfiguration, not to stock `hw.Init()`.
+   - **USB CDC Enumeration Discovery (corrected, verified on hardware 2026-10-04):**
+     - The Gamma's USB-C jack is wired to the Seed's **external** USB port (`D29`/`D30` = `PB14`/`PB15`, `USB_OTG_HS` in FS mode), **not** the internal `PA11`/`PA12` (`USB_OTG_FS`) port that `DaisySeed::StartLog()` / `hw.PrintLine()` use.
+     - Evidence: with CDC on `FS_INTERNAL`, an on-OLED register dump showed `USB_OTG_FS` powered, B-valid overridden and D+ pulled up, but `DSTS` frame number stuck at `0` (no SOF from host) and no enumeration on macOS. With `Logger<LOGGER_EXTERNAL>` + `FS_EXTERNAL` the device enumerates immediately as `Daisy Seed External` (`0483:5740`, `/dev/cu.usbmodem*`).
+     - An earlier local libDaisy patch (`hpcd_USB_OTG_FS.Init.vbus_sensing_enable = DISABLE`, formerly `patches/libdaisy-vbus-sensing.patch`) only affected the unconnected internal port and has been **reverted**; the project now builds against unmodified libDaisy, which already disables VBUS sensing for `USB_OTG_HS`.
+     - The bootloader reports `Version::v6_1`, so `skip_clocks` is **not** set and libDaisy configures `HSI48` → `RCC_USBCLKSOURCE_HSI48` itself; no application clock code is required.
+     - **ISR deadlock trap:** never call `PrintLine()` from `UsbRxCallback` (USB ISR). Once a terminal is connected the logger blocks in `TransmitSync()` waiting for a TX-complete interrupt that cannot fire inside the ISR. Queue bytes in the callback and handle them in the main loop.
    - **I2C Bus Recovery:**
      - Explicit bus reset (`__HAL_RCC_I2C1_FORCE_RESET()` / `RELEASE_RESET()`) and clean GPIO alternate function pin muxing (`GPIO_AF4_I2C1`) with pullups ensures reliable OLED communication without hanging on bus transitions.
 
@@ -196,8 +198,8 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
 1. **Diagnostic Firmware Setup:**
    - Source: [`firmware/phase1_i2c_scan/main.cpp`](firmware/phase1_i2c_scan/main.cpp)
    - Compiled with **`APP_TYPE = BOOT_SRAM`** (vectors at `0x24000000`, validated entry point `0x24000795`).
-   - Integrated HSI48 oscillator activation and routing for USB clock domain.
-   - Non-blocking USB CDC virtual COM port logging with receive commands (`'s'` scan, `'b'` DFU bootloader, `'h'` help).
+   - USB CDC logging on the Seed's external USB port (`Logger<LOGGER_EXTERNAL>`, `FS_EXTERNAL`) — the jack is not wired to the internal port. (An earlier note claimed HSI48 setup code here; none ever existed, and none is needed.)
+   - Non-blocking USB CDC virtual COM port logging with receive commands (`'s'` scan, `'b'` DFU bootloader, `'h'` help), queued from the USB ISR and handled in the main loop.
    - Integrated SSD1306 128x64 OLED display driver (`I2C1`, `D11`/`D12` @ `0x3D`) to render scan results and live uptime directly on the device.
    - LED heartbeat at 2 Hz (250ms toggle).
 
@@ -331,7 +333,7 @@ Having official production firmware (`gamma-v2.0.3.bin`) enabled static reverse-
 
 3. **USB MIDI Device Implementation (Upcoming):**
    - Implement class-compliant USB MIDI using libDaisy's native `MidiUsbHandler` ([`libDaisy/src/hid/midi.h`](libDaisy/src/hid/midi.h)):
-     - Configure `MidiUsbHandler::Config` for `MidiUsbTransport::Config::INTERNAL` (utilizing the internal USB-C connector on `PA11`/`PA12`).
+     - Configure `MidiUsbHandler::Config` for `MidiUsbTransport::Config::EXTERNAL` (the USB-C connector is wired to the Seed's external USB port, `D29`/`D30` = `PB14`/`PB15`).
      - Note: Hardware has no 3.5mm TRS MIDI port; all MIDI communication is over USB-C.
      - Transmit and receive MIDI Note On / Note Off / CC messages to/from a connected DAW or host.
      - Verify interoperability with USB CDC serial diagnostics or run USB MIDI device profile.

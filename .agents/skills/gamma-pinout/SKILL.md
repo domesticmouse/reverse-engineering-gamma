@@ -25,7 +25,7 @@ A ready-to-use C++ header containing these definitions is available at:
 | **Display** | 1.3" OLED (SSD1306 controller, 128x64 monochrome) via I2C1 @ `0x3D` |
 | **Bootloader** | Electro-Smith Daisy Bootloader in internal flash (`0x08000000`) |
 | **Application Memory** | Binaries flashed to QSPI flash (`0x90040000`), loaded to **AXI SRAM** (`0x24000000`, `APP_TYPE = BOOT_SRAM`) |
-| **USB Interface** | USB OTG FS (Full Speed 12 Mbps) with **`vbus_sensing_enable = DISABLE`** |
+| **USB Interface** | **External** USB port: `USB_OTG_HS` in Full Speed mode on `seed::D29`/`seed::D30` (`PB14`/`PB15`). Use `UsbHandle::FS_EXTERNAL` / `Logger<LOGGER_EXTERNAL>` — **not** `hw.StartLog()` |
 
 ---
 
@@ -64,8 +64,8 @@ A ready-to-use C++ header containing these definitions is available at:
 | **Speaker Amp En** | Speaker Enable/Mute | `seed::D32` (`seed::A13`) | `PC3` | GPIO Out | Output Push-Pull | Active HIGH (`1`=On, `0`=Muted) | Verified on Hardware |
 | **Power Fault Sense** | Battery Low / Power Fault | `seed::D0` | `PB12` | GPIO In | Internal Pull-up | Active LOW ("Charge Me!") | Confirmed Disassembly |
 | **Audio Out** | Stereo DAC Out | Internal | Multiple | `SAI1` | PCM3060 Codec | 48 kHz / 24-bit Stereo | Internal Daisy routing |
-| **MIDI** | USB-C MIDI (Class Compliant) | Internal | `PA11`/`PA12` | `USB_OTG_FS` | Full Speed USB Device | `MidiUsbHandler` (no 3.5mm MIDI) | Verified on Hardware |
-| **USB-C** | D+ / D- / Power | Internal | `PA11`/`PA12` | `USB_OTG_FS` | Full Speed Device | `vbus_sensing = DISABLE` | Verified on Hardware |
+| **MIDI** | USB-C MIDI (Class Compliant) | `seed::D29`/`seed::D30` | `PB14`/`PB15` | `USB_OTG_HS` (FS mode) | Full Speed USB Device | `MidiUsbHandler` with `MidiUsbTransport::Config::EXTERNAL` (no 3.5mm MIDI) | Not yet implemented |
+| **USB-C** | D- / D+ / Power | `seed::D29`/`seed::D30` | `PB14`/`PB15` | `USB_OTG_HS` (FS mode) | Full Speed Device | `UsbHandle::FS_EXTERNAL` | Verified on Hardware (CDC) |
 
 ---
 
@@ -216,16 +216,18 @@ The rotary dial on the front panel is connected via a 4-wire harness:
 
 ## 8. USB-C Interface & USB MIDI
 
-* **Port:** STM32 USB OTG FS (Full Speed, 12 Mbps) via internal `PA11` (D-) and `PA12` (D+).
+* **Port:** The USB-C connector is wired to the Seed's **external** USB pins: `seed::D29` (`PB14`, D-) and `seed::D30` (`PB15`, D+), driven by `USB_OTG_HS` in Full Speed (12 Mbps) mode. The internal `PA11`/`PA12` (`USB_OTG_FS`) port is **not connected** to the jack.
+  * *Hardware evidence:* with CDC on `FS_INTERNAL`, `USB_OTG_FS` was powered, B-valid overridden and D+ pulled up (`DCTL.SDIS = 0`), yet `DSTS` frame number stayed `0` (no SOF from the host) and macOS never enumerated it. Switching to `FS_EXTERNAL` enumerates immediately as `Daisy Seed External` (`0483:5740`).
+* **USB CDC Serial (diagnostics):** `DaisySeed::StartLog()` / `hw.PrintLine()` are hard-wired to the internal port and will never appear on the host. Use the external logger instead:
+  ```cpp
+  using UsbLog = daisy::Logger<daisy::LOGGER_EXTERNAL>;
+  UsbLog::StartLog(false);
+  hw.usb_handle.SetReceiveCallback(UsbRxCallback, daisy::UsbHandle::UsbPeriph::FS_EXTERNAL);
+  UsbLog::PrintLine("Hello from Gamma");
+  ```
+* **Never print from the USB receive callback:** `UsbRxCallback` runs in the USB interrupt. Once a host terminal is connected the logger switches to a blocking `TransmitSync()`, which waits for a TX-complete interrupt that cannot fire while still inside the USB ISR — the firmware deadlocks. Queue received bytes in the callback and handle/print them from the main loop (see `firmware/phase5_audio/main.cpp`).
 * **MIDI Implementation:** 
   * The Gamma Mini Synth has **no hardware 3.5mm TRS MIDI port**. All MIDI communication is handled over the USB-C connector as a class-compliant USB MIDI device.
-  * In libDaisy, use `daisy::MidiUsbHandler` with `midi_cfg.transport_config.periph = daisy::MidiUsbTransport::Config::INTERNAL`. No discrete GPIO pins are required because it is handled by the MCU's internal USB OTG PHY.
-* **Crucial Hardware Trap (`vbus_sensing_enable`):**
-  * Standard `libDaisy` firmware enables hardware VBUS sensing (`vbus_sensing_enable = ENABLE`), expecting a 5V sense voltage on pin `PA9` before activating the internal D+ pullup resistor.
-  * The Gamma PCB **does not route 5V VBUS to `PA9`**.
-  * As a result, stock `libDaisy` applications detect "cable disconnected" and never pull up D+, preventing USB enumeration.
-  * **Solution:** In [`libDaisy/src/usbd/usbd_conf.c`](../../libDaisy/src/usbd/usbd_conf.c), configure:
-    ```c
-    hpcd_USB_OTG_FS.Init.vbus_sensing_enable = DISABLE;
-    ```
-  * Additionally, ensure the `HSI48` oscillator is enabled and routed to `RCC_USBCLKSOURCE_HSI48` when launching from SRAM.
+  * In libDaisy, use `daisy::MidiUsbHandler` with `midi_cfg.transport_config.periph = daisy::MidiUsbTransport::Config::EXTERNAL`. No discrete GPIO configuration is required; libDaisy configures `PB14`/`PB15` for `USB_OTG_HS`.
+* **VBUS sensing:** Stock libDaisy already sets `hpcd_USB_OTG_HS.Init.vbus_sensing_enable = DISABLE`, so the external port works with **unmodified** libDaisy. (An earlier local patch disabling VBUS sensing on `hpcd_USB_OTG_FS` only affected the unconnected internal port and has been reverted.)
+* **USB clock:** The Gamma's Daisy Bootloader reports as v6.1+ (`System::GetBootloaderVersion()` = `3` = `Version::v6_1`), so `DaisySeed::Init()` performs full clock configuration, including `HSI48` routed to `RCC_USBCLKSOURCE_HSI48`. No application-level clock setup is needed.

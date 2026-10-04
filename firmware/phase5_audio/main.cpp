@@ -11,6 +11,11 @@ using namespace daisysp;
 
 DaisySeed hw;
 
+// The Gamma's USB-C connector is wired to the Seed's *external* USB pins (D29/D30 -> USB_OTG_HS
+// in FS mode), not the internal PA11/PA12 port used by DaisySeed::StartLog()/PrintLine().
+// Verified on hardware: OTG_FS never receives SOF frames, while the bootloader enumerates fine.
+using UsbLog = Logger<LOGGER_EXTERNAL>;
+
 // ========================================================================
 // OLED Display Setup (SSD1306 128x64 on I2C1, D11/D12 @ 0x3D)
 // ========================================================================
@@ -239,20 +244,31 @@ void TimerCallback(void* data)
     // 2. Encoder Push Switch Debouncing & Long-Press Detection (1 kHz sampling)
     static uint32_t s_enc_press_time = 0;
     static bool     s_enc_long_fired = false;
+    static bool     s_enc_dfu_fired  = false;
 
     g_enc_click.Debounce();
     if(g_enc_click.RisingEdge())
     {
         s_enc_press_time = System::GetNow();
         s_enc_long_fired = false;
+        s_enc_dfu_fired  = false;
     }
     else if(g_enc_click.Pressed())
     {
+        uint32_t held_ms = System::GetNow() - s_enc_press_time;
+
         // While held, if 600 ms elapses, fire long-press event immediately
-        if(!s_enc_long_fired && (System::GetNow() - s_enc_press_time >= 600))
+        if(!s_enc_long_fired && (held_ms >= 600))
         {
             s_enc_long_fired = true;
             EnqueueKeyEvent(16, true); // Event 16: Toggle Speaker Mute
+        }
+
+        // Keep holding to 3 s -> reboot into the Daisy DFU bootloader
+        if(!s_enc_dfu_fired && (held_ms >= 3000))
+        {
+            s_enc_dfu_fired = true;
+            EnqueueKeyEvent(17, true); // Event 17: Reboot into DFU Bootloader
         }
     }
     else if(g_enc_click.FallingEdge())
@@ -282,8 +298,17 @@ void TimerCallback(void* data)
 }
 
 // ========================================================================
-// USB CDC Command Callback
+// USB CDC Command Handling
 // ========================================================================
+// UsbRxCallback runs inside the USB interrupt. It must NOT print: once a host terminal is
+// connected the logger switches to a blocking TransmitSync(), which waits for a TX-complete
+// interrupt that cannot fire while we are still inside the USB ISR -> permanent deadlock.
+// Received bytes are therefore queued here and handled from the main loop.
+static constexpr size_t kRxQueueSize = 64;
+static volatile char    g_rx_queue[kRxQueueSize];
+static volatile size_t  g_rx_head = 0;
+static volatile size_t  g_rx_tail = 0;
+
 void UsbRxCallback(uint8_t* buff, uint32_t* length)
 {
     if(!buff || !length)
@@ -291,45 +316,64 @@ void UsbRxCallback(uint8_t* buff, uint32_t* length)
 
     for(uint32_t i = 0; i < *length; i++)
     {
-        char c = (char)buff[i];
-        if(c == 'b' || c == 'B')
-        {
-            hw.PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
-            g_reboot_bootloader = true;
-        }
-        else if(c == 'm' || c == 'M' || c == 't' || c == 'T')
-        {
-            g_current_mode = (g_current_mode == MODE_SYNTH) ? MODE_TEST_TONE : MODE_SYNTH;
-            hw.PrintLine("[MODE] Switched to %s", (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
-        }
-        else if(c == 'w' || c == 'W')
-        {
-            g_current_waveform = (g_current_waveform + 1) % NUM_WAVEFORMS;
-            uint8_t wf = kWaveforms[g_current_waveform];
-            g_note_osc.SetWaveform(wf);
-            for(int k = 0; k < 3; k++)
-                g_chord_osc[k].SetWaveform(wf);
-            hw.PrintLine("[WAVE] Oscillator waveform changed to %s", kWaveNames[g_current_waveform]);
-        }
-        else if(c == 's' || c == 'S')
-        {
-            g_speaker_enabled = !g_speaker_enabled;
-            g_spk_en.Write(g_speaker_enabled);
-            snprintf(g_last_event, sizeof(g_last_event), "Speaker: %s", g_speaker_enabled ? "ON" : "MUTED");
-            g_last_event_time = System::GetNow();
-            hw.PrintLine("[SPK] Speaker %s (PC3 = %d)",
-                         g_speaker_enabled ? "ENABLED" : "MUTED",
-                         g_speaker_enabled ? 1 : 0);
-        }
-        else if(c == 'h' || c == 'H' || c == '?')
-        {
-            hw.PrintLine("\n--- Gamma Phase 5 Audio Commands ---");
-            hw.PrintLine("  m/t : Toggle mode (SYNTH vs TEST TONE)");
-            hw.PrintLine("  s   : Toggle internal speaker mute (PC3)");
-            hw.PrintLine("  w   : Cycle waveform (Sine, Tri, Saw, Square)");
-            hw.PrintLine("  b   : Reboot into DFU Bootloader");
-            hw.PrintLine("  h/? : Print this help\n");
-        }
+        size_t next = (g_rx_head + 1) % kRxQueueSize;
+        if(next == g_rx_tail)
+            break; // Queue full: drop remaining bytes
+        g_rx_queue[g_rx_head] = (char)buff[i];
+        __DSB();
+        g_rx_head = next;
+    }
+}
+
+static void HandleUsbCommand(char c)
+{
+    if(c == 'b' || c == 'B')
+    {
+        g_reboot_bootloader = true;
+    }
+    else if(c == 'm' || c == 'M' || c == 't' || c == 'T')
+    {
+        g_current_mode = (g_current_mode == MODE_SYNTH) ? MODE_TEST_TONE : MODE_SYNTH;
+        UsbLog::PrintLine("[MODE] Switched to %s", (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
+    }
+    else if(c == 'w' || c == 'W')
+    {
+        g_current_waveform = (g_current_waveform + 1) % NUM_WAVEFORMS;
+        uint8_t wf = kWaveforms[g_current_waveform];
+        g_note_osc.SetWaveform(wf);
+        for(int k = 0; k < 3; k++)
+            g_chord_osc[k].SetWaveform(wf);
+        UsbLog::PrintLine("[WAVE] Oscillator waveform changed to %s", kWaveNames[g_current_waveform]);
+    }
+    else if(c == 's' || c == 'S')
+    {
+        g_speaker_enabled = !g_speaker_enabled;
+        g_spk_en.Write(g_speaker_enabled);
+        snprintf(g_last_event, sizeof(g_last_event), "Speaker: %s", g_speaker_enabled ? "ON" : "MUTED");
+        g_last_event_time = System::GetNow();
+        UsbLog::PrintLine("[SPK] Speaker %s (PC3 = %d)",
+                     g_speaker_enabled ? "ENABLED" : "MUTED",
+                     g_speaker_enabled ? 1 : 0);
+    }
+    else if(c == 'h' || c == 'H' || c == '?')
+    {
+        UsbLog::PrintLine("\n--- Gamma Phase 5 Audio Commands ---");
+        UsbLog::PrintLine("  m/t : Toggle mode (SYNTH vs TEST TONE)");
+        UsbLog::PrintLine("  s   : Toggle internal speaker mute (PC3)");
+        UsbLog::PrintLine("  w   : Cycle waveform (Sine, Tri, Saw, Square)");
+        UsbLog::PrintLine("  b   : Reboot into DFU Bootloader");
+        UsbLog::PrintLine("  h/? : Print this help\n");
+    }
+}
+
+static void ProcessUsbCommands()
+{
+    while(g_rx_tail != g_rx_head)
+    {
+        char c = g_rx_queue[g_rx_tail];
+        __DSB();
+        g_rx_tail = (g_rx_tail + 1) % kRxQueueSize;
+        HandleUsbCommand(c);
     }
 }
 
@@ -611,23 +655,24 @@ int main(void)
     hw.SetAudioBlockSize(48); // 1 ms @ 48 kHz
     hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_48KHZ);
 
-    // 2. Start USB CDC Logging (non-blocking)
-    hw.StartLog(false);
-    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_INTERNAL);
+    // 2. Start USB CDC Logging (non-blocking) on the external USB port wired to the USB-C jack
+    UsbLog::StartLog(false);
+    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_EXTERNAL);
 
-    hw.PrintLine("\n\n========================================================");
-    hw.PrintLine("  Gamma Mini Synth Audio Verification - Phase 5");
-    hw.PrintLine("  PCM3060 Stereo Codec via SAI1 @ 48 kHz (Seed 2 DFM)");
-    hw.PrintLine("========================================================");
-    hw.PrintLine("Controls:");
-    hw.PrintLine("  - Note Keys N1-N7  : Play C4 to B4 major scale");
-    hw.PrintLine("  - Chord Keys C1-C7 : Play triads (C, Dm, Em, F, G, Am, Bdim)");
-    hw.PrintLine("  - Knobs K0-K3      : Chord Vol, Chord Filter, Note Vol, Note Filter");
-    hw.PrintLine("                       (Turn K0/K2 clockwise to increase volume)");
-    hw.PrintLine("  - Left Stick (LX)  : Pitch bend");
-    hw.PrintLine("  - Right Stick (RX) : Stereo pan");
-    hw.PrintLine("  - Rotary Encoder   : Turn = Cycle Waveform, Click = Mode Toggle");
-    hw.PrintLine("  - USB Commands     : 'm' (mode), 's' (speaker mute), 'w' (wave), 'b' (bootloader)\n");
+    UsbLog::PrintLine("\n\n========================================================");
+    UsbLog::PrintLine("  Gamma Mini Synth Audio Verification - Phase 5");
+    UsbLog::PrintLine("  PCM3060 Stereo Codec via SAI1 @ 48 kHz (Seed 2 DFM)");
+    UsbLog::PrintLine("========================================================");
+    UsbLog::PrintLine("Controls:");
+    UsbLog::PrintLine("  - Note Keys N1-N7  : Play C4 to B4 major scale");
+    UsbLog::PrintLine("  - Chord Keys C1-C7 : Play triads (C, Dm, Em, F, G, Am, Bdim)");
+    UsbLog::PrintLine("  - Knobs K0-K3      : Chord Vol, Chord Filter, Note Vol, Note Filter");
+    UsbLog::PrintLine("                       (Turn K0/K2 clockwise to increase volume)");
+    UsbLog::PrintLine("  - Left Stick (LX)  : Pitch bend");
+    UsbLog::PrintLine("  - Right Stick (RX) : Stereo pan");
+    UsbLog::PrintLine("  - Rotary Encoder   : Turn = Cycle Waveform, Click = Mode Toggle");
+    UsbLog::PrintLine("                       Hold 0.6 s = Speaker Mute, Hold 3 s = DFU Bootloader");
+    UsbLog::PrintLine("  - USB Commands     : 'm' (mode), 's' (speaker mute), 'w' (wave), 'b' (bootloader)\n");
 
     // 3. Initialize OLED Display (I2C1 @ 0x3D)
     InitOled();
@@ -698,13 +743,13 @@ int main(void)
 
     // 10. Start Audio Processing Callback
     hw.StartAudio(AudioCallback);
-    hw.PrintLine("[AUDIO] SAI1 PCM3060 audio engine started @ %.0f Hz.", sample_rate);
+    UsbLog::PrintLine("[AUDIO] SAI1 PCM3060 audio engine started @ %.0f Hz.", sample_rate);
 
     // 11. Allow audio codec output to stabilize, then unmute Speaker Amplifier (PC3 HIGH)
     System::Delay(60);
     g_speaker_enabled = true;
     g_spk_en.Write(g_speaker_enabled);
-    hw.PrintLine("[AUDIO] Speaker amplifier enabled (PC3 = HIGH).");
+    UsbLog::PrintLine("[AUDIO] Speaker amplifier enabled (PC3 = HIGH).");
 
     uint32_t last_screen_time = System::GetNow();
     uint32_t last_blink_time  = System::GetNow();
@@ -718,11 +763,30 @@ int main(void)
     {
         uint32_t now = System::GetNow();
 
+        // Handle USB CDC commands queued by UsbRxCallback (safe to print here)
+        ProcessUsbCommands();
+
         // Deferred DFU bootloader reboot (triggered from USB callback)
         if(g_reboot_bootloader)
         {
-            hw.PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
+            UsbLog::PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
             g_spk_en.Write(false); // Mute speaker amplifier before reset
+            hw.StopAudio();
+
+            // The OLED retains its last frame while the bootloader runs, so leave a status screen
+            if(g_oled_active)
+            {
+                oled.Fill(false);
+                DrawRect(0, 0, 127, 63, true);
+                oled.SetCursor(31, 12);
+                oled.WriteString("DFU MODE", Font_7x10, true);
+                oled.SetCursor(10, 32);
+                oled.WriteString("Daisy Bootloader", Font_6x8, true);
+                oled.SetCursor(16, 44);
+                oled.WriteString("Ready to flash", Font_6x8, true);
+                oled.Update();
+            }
+
             System::Delay(200);
             System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT);
         }
@@ -737,7 +801,7 @@ int main(void)
             {
                 snprintf(g_last_event, sizeof(g_last_event), "LOW BATTERY / FAULT!");
                 g_last_event_time = now;
-                hw.PrintLine("[PWR] Battery Low / Power Fault Detected (PB12 = LOW)");
+                UsbLog::PrintLine("[PWR] Battery Low / Power Fault Detected (PB12 = LOW)");
             }
         }
 
@@ -757,7 +821,7 @@ int main(void)
                     g_active_note_idx = ev.id;
                     snprintf(g_last_event, sizeof(g_last_event), "Note ON: %s", kNoteNames[ev.id]);
                     g_last_event_time = now;
-                    hw.PrintLine("[NOTE] %s (%.1f Hz) PRESSED", kNoteNames[ev.id], kNoteFreqs[ev.id]);
+                    UsbLog::PrintLine("[NOTE] %s (%.1f Hz) PRESSED", kNoteNames[ev.id], kNoteFreqs[ev.id]);
                 }
                 else if(g_active_note_idx == (int)ev.id)
                 {
@@ -780,7 +844,7 @@ int main(void)
                     g_active_chord_idx = c_idx;
                     snprintf(g_last_event, sizeof(g_last_event), "Chord ON: %s", kChords[c_idx].name);
                     g_last_event_time = now;
-                    hw.PrintLine("[CHORD] %s PRESSED", kChords[c_idx].name);
+                    UsbLog::PrintLine("[CHORD] %s PRESSED", kChords[c_idx].name);
                 }
                 else if(g_active_chord_idx == (int)c_idx)
                 {
@@ -800,7 +864,7 @@ int main(void)
                 snprintf(g_last_event, sizeof(g_last_event), "Mode: %s",
                          (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
                 g_last_event_time = now;
-                hw.PrintLine("[MODE] Mode toggled to %s",
+                UsbLog::PrintLine("[MODE] Mode toggled to %s",
                              (g_current_mode == MODE_SYNTH) ? "SYNTH" : "TEST TONE");
             }
             else if(ev.id == 16 && ev.pressed)
@@ -811,9 +875,15 @@ int main(void)
                 snprintf(g_last_event, sizeof(g_last_event), "Speaker: %s",
                          g_speaker_enabled ? "ON" : "MUTED");
                 g_last_event_time = now;
-                hw.PrintLine("[SPK] Manual toggle -> Speaker Amp %s (PC3 = %d)",
+                UsbLog::PrintLine("[SPK] Manual toggle -> Speaker Amp %s (PC3 = %d)",
                              g_speaker_enabled ? "ENABLED" : "MUTED",
                              g_speaker_enabled ? 1 : 0);
+            }
+            else if(ev.id == 17 && ev.pressed)
+            {
+                // Very long Encoder Press (>= 3 s) -> Reboot into DFU Bootloader
+                UsbLog::PrintLine("[ENC] 3 s hold detected -> DFU bootloader requested");
+                g_reboot_bootloader = true;
             }
         }
 
@@ -860,7 +930,7 @@ int main(void)
 
             snprintf(g_last_event, sizeof(g_last_event), "Wave: %s", kWaveNames[g_current_waveform]);
             g_last_event_time = now;
-            hw.PrintLine("[ENC] Waveform: %s", kWaveNames[g_current_waveform]);
+            UsbLog::PrintLine("[ENC] Waveform: %s", kWaveNames[g_current_waveform]);
         }
 
         // --- E. OLED Screen Refresh (~30 Hz) ---

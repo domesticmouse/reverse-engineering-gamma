@@ -8,6 +8,11 @@ using namespace daisy;
 
 DaisySeed hw;
 
+// The Gamma's USB-C connector is wired to the Seed's *external* USB pins (D29/D30 -> USB_OTG_HS
+// in FS mode), not the internal PA11/PA12 port used by DaisySeed::StartLog()/PrintLine().
+// Verified on hardware: OTG_FS never receives SOF frames, while the bootloader enumerates fine.
+using UsbLog = Logger<LOGGER_EXTERNAL>;
+
 // ========================================================================
 // OLED Display Setup (SSD1306 128x64 on I2C1, D11/D12 @ 0x3D)
 // ========================================================================
@@ -176,7 +181,51 @@ void TimerCallback(void* data)
 }
 
 // Callback for USB CDC Serial inputs
+// USB CDC receive path.
+// UsbRxCallback runs inside the USB interrupt. It must NOT print: once a host terminal is
+// connected the logger switches to a blocking TransmitSync(), which waits for a TX-complete
+// interrupt that cannot fire while we are still inside the USB ISR -> permanent deadlock.
+// Received bytes are therefore queued here and handled from the main loop.
+static void HandleUsbBytes(uint8_t* buff, uint32_t* length);
+
+static constexpr size_t kRxQueueSize = 64;
+static volatile uint8_t g_rx_queue[kRxQueueSize];
+static volatile size_t  g_rx_head = 0;
+static volatile size_t  g_rx_tail = 0;
+
 void UsbRxCallback(uint8_t* buff, uint32_t* length)
+{
+    if(!buff || !length)
+        return;
+
+    for(uint32_t i = 0; i < *length; i++)
+    {
+        size_t next = (g_rx_head + 1) % kRxQueueSize;
+        if(next == g_rx_tail)
+            break; // Queue full: drop remaining bytes
+        g_rx_queue[g_rx_head] = buff[i];
+        __DSB();
+        g_rx_head = next;
+    }
+}
+
+// Drain queued bytes and dispatch them to HandleUsbBytes() from the main loop
+static void ProcessUsbCommands()
+{
+    uint8_t  local[kRxQueueSize];
+    uint32_t n = 0;
+    while(g_rx_tail != g_rx_head && n < kRxQueueSize)
+    {
+        local[n++] = g_rx_queue[g_rx_tail];
+        __DSB();
+        g_rx_tail = (g_rx_tail + 1) % kRxQueueSize;
+    }
+    if(n > 0)
+        HandleUsbBytes(local, &n);
+}
+
+// Command handler (called from the main loop via ProcessUsbCommands, never from the ISR)
+static void HandleUsbBytes(uint8_t* buff, uint32_t* length)
 {
     if(!buff || !length)
         return;
@@ -186,7 +235,7 @@ void UsbRxCallback(uint8_t* buff, uint32_t* length)
         char c = (char)buff[i];
         if(c == 'b' || c == 'B')
         {
-            hw.PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
+            UsbLog::PrintLine("\n*** Rebooting into Daisy DFU Bootloader... ***\n");
             System::Delay(200);
             System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT);
         }
@@ -195,15 +244,15 @@ void UsbRxCallback(uint8_t* buff, uint32_t* length)
             g_enc_pos = 0;
             g_quad_pos = 0;
             g_enc_transitions = 0;
-            hw.PrintLine("Encoder counters reset to 0.");
+            UsbLog::PrintLine("Encoder counters reset to 0.");
         }
         else if(c == 'h' || c == 'H' || c == '?')
         {
-            hw.PrintLine("\n--- Phase 4 Diagnostic Commands ---");
-            hw.PrintLine("  r : Reset encoder position counter to 0");
-            hw.PrintLine("  b : Reboot into Daisy DFU Bootloader");
-            hw.PrintLine("  h : Show this help message");
-            hw.PrintLine("-----------------------------------\n");
+            UsbLog::PrintLine("\n--- Phase 4 Diagnostic Commands ---");
+            UsbLog::PrintLine("  r : Reset encoder position counter to 0");
+            UsbLog::PrintLine("  b : Reboot into Daisy DFU Bootloader");
+            UsbLog::PrintLine("  h : Show this help message");
+            UsbLog::PrintLine("-----------------------------------\n");
         }
     }
 }
@@ -353,14 +402,14 @@ int main(void)
     hw.Init();
 
     // Start USB CDC logging (non-blocking)
-    hw.StartLog(false);
-    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_INTERNAL);
+    UsbLog::StartLog(false);
+    hw.usb_handle.SetReceiveCallback(UsbRxCallback, UsbHandle::UsbPeriph::FS_EXTERNAL);
 
-    hw.PrintLine("\n\n========================================================");
-    hw.PrintLine("  Gamma Mini Synth Diagnostic Console - Phase 4");
-    hw.PrintLine("  Digital Input Verification: 14 Keys + Rotary Encoder");
-    hw.PrintLine("========================================================");
-    hw.PrintLine("Send 'b' to reboot into DFU Bootloader, 'r' to reset counter.\n");
+    UsbLog::PrintLine("\n\n========================================================");
+    UsbLog::PrintLine("  Gamma Mini Synth Diagnostic Console - Phase 4");
+    UsbLog::PrintLine("  Digital Input Verification: 14 Keys + Rotary Encoder");
+    UsbLog::PrintLine("========================================================");
+    UsbLog::PrintLine("Send 'b' to reboot into DFU Bootloader, 'r' to reset counter.\n");
 
     // Initialize OLED Display
     InitOled();
@@ -399,7 +448,7 @@ int main(void)
     g_timer.SetCallback(TimerCallback, nullptr);
     g_timer.Start();
 
-    hw.PrintLine("14 Keys, Encoder, 1kHz Timer, and OLED initialized successfully.");
+    UsbLog::PrintLine("14 Keys, Encoder, 1kHz Timer, and OLED initialized successfully.");
 
     uint32_t last_blink_time  = System::GetNow();
     uint32_t last_screen_time = System::GetNow();
@@ -409,6 +458,9 @@ int main(void)
     while(1)
     {
         uint32_t now = System::GetNow();
+
+        // Handle USB CDC commands queued by UsbRxCallback (safe to print here)
+        ProcessUsbCommands();
 
         // 1. Process Key & Encoder Events from 1 kHz Interrupt Queue
         while(g_eq_tail != g_eq_head)
@@ -423,13 +475,13 @@ int main(void)
                 {
                     snprintf(g_last_event, sizeof(g_last_event), "Pressed N%d (D%d)", k + 1, gamma_pins::note_keys::pins[k].pin);
                     g_last_event_time = now;
-                    hw.PrintLine("[KEY] Note Key N%d PRESSED (D%d)", k + 1, gamma_pins::note_keys::pins[k].pin);
+                    UsbLog::PrintLine("[KEY] Note Key N%d PRESSED (D%d)", k + 1, gamma_pins::note_keys::pins[k].pin);
                 }
                 else
                 {
                     snprintf(g_last_event, sizeof(g_last_event), "Released N%d", k + 1);
                     g_last_event_time = now;
-                    hw.PrintLine("[KEY] Note Key N%d RELEASED", k + 1);
+                    UsbLog::PrintLine("[KEY] Note Key N%d RELEASED", k + 1);
                 }
             }
             else if(ev.id < 14)
@@ -439,13 +491,13 @@ int main(void)
                 {
                     snprintf(g_last_event, sizeof(g_last_event), "Pressed C%d (D%d)", k + 1, gamma_pins::chord_keys::pins[k].pin);
                     g_last_event_time = now;
-                    hw.PrintLine("[KEY] Chord Key C%d PRESSED (D%d)", k + 1, gamma_pins::chord_keys::pins[k].pin);
+                    UsbLog::PrintLine("[KEY] Chord Key C%d PRESSED (D%d)", k + 1, gamma_pins::chord_keys::pins[k].pin);
                 }
                 else
                 {
                     snprintf(g_last_event, sizeof(g_last_event), "Released C%d", k + 1);
                     g_last_event_time = now;
-                    hw.PrintLine("[KEY] Chord Key C%d RELEASED", k + 1);
+                    UsbLog::PrintLine("[KEY] Chord Key C%d RELEASED", k + 1);
                 }
             }
             else if(ev.id == 14)
@@ -454,13 +506,13 @@ int main(void)
                 {
                     snprintf(g_last_event, sizeof(g_last_event), "Enc Switch PRESSED (D%d)", gamma_pins::encoder::pin_click.pin);
                     g_last_event_time = now;
-                    hw.PrintLine("[ENC] Push Switch PRESSED (D%d)", gamma_pins::encoder::pin_click.pin);
+                    UsbLog::PrintLine("[ENC] Push Switch PRESSED (D%d)", gamma_pins::encoder::pin_click.pin);
                 }
                 else
                 {
                     snprintf(g_last_event, sizeof(g_last_event), "Enc Switch RELEASED");
                     g_last_event_time = now;
-                    hw.PrintLine("[ENC] Push Switch RELEASED");
+                    UsbLog::PrintLine("[ENC] Push Switch RELEASED");
                 }
             }
         }
@@ -475,7 +527,7 @@ int main(void)
                      (long)cur_pos,
                      (delta > 0) ? "CW" : "CCW");
             g_last_event_time = now;
-            hw.PrintLine("[ENC] Position: %+ld (Delta: %+ld, Trans: %lu)",
+            UsbLog::PrintLine("[ENC] Position: %+ld (Delta: %+ld, Trans: %lu)",
                          (long)cur_pos, (long)delta, (unsigned long)g_enc_transitions);
         }
 

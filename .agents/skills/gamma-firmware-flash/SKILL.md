@@ -79,7 +79,7 @@ python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py firmware/p
 ## Post-Flash Verification & Interaction
 
 1. **USB CDC Serial Console (Diagnostics):**
-   If the firmware initializes `hw.StartLog(false)` or USB CDC:
+   If the firmware initializes USB CDC on the external port (`Logger<LOGGER_EXTERNAL>::StartLog(false)` — `hw.StartLog()` uses the unconnected internal port on the Gamma), it enumerates as `Daisy Seed External` (`0483:5740`):
    ```bash
    # Connect using minicom, screen, or tio:
    tio /dev/cu.usbmodem*
