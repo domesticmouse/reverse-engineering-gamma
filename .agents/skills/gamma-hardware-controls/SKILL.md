@@ -80,10 +80,10 @@ Consult the detailed topical references below for full code snippets, electrical
 
 | Symptom | Cause | Solution Reference |
 | :--- | :--- | :--- |
-| **OLED blank or frozen on reboot** | I2C bus locked up by previous transfer | [Display Bus Reset](references/display.md#2-bus-reset-sequence--gpio-initialization) |
-| **Knob values decrease when turned CW** | Potentiometer wiper sweeps from 3.3V at CCW | [Knob Inversion](references/analog_inputs.md#2-electrical-polarities--inversion-details) |
-| **Right stick X moves opposite to Left stick** | PCB trace routing reversed on right stick | [Stick Polarities](references/analog_inputs.md#2-electrical-polarities--inversion-details) |
-| **Rotary encoder misses clicks while turning** | Main loop blocked by `oled.Update()` (9–23 ms) | [1 kHz Timer Architecture](references/rotary_encoder.md#3-the-display-blocking-hazard--1-khz-timer-isr) |
-| **Keys feel sluggish or drop quick presses** | Low polling rate in main loop | [1 kHz Key Debounce](references/digital_keys.md#2-key-debouncing--1-khz-sampling-architecture) |
-| **Synth locks up / note plays forever** | `libDaisy` `Logger` blocked in `TransmitSync` after terminal closed | [Gamma Pinout USB CDC](../gamma-pinout/SKILL.md#8-usb-c-interface--usb-midi) |
+| **OLED blank or frozen on reboot** | I2C bus locked up by previous transfer | [Display Bus Reset](references/display.md#2-bus-reset-sequence-gpio-initialization) |
+| **Knob values decrease when turned CW** | Potentiometer wiper sweeps from 3.3V at CCW | [Knob Inversion](references/analog_inputs.md#3-electrical-polarities-inversion-details) |
+| **Right stick X moves opposite to Left stick** | PCB trace routing reversed on right stick | [Stick Polarities](references/analog_inputs.md#3-electrical-polarities-inversion-details) |
+| **Rotary encoder misses clicks while turning** | Main loop blocked by `oled.Update()` (9–23 ms) | [1 kHz Timer Architecture](references/rotary_encoder.md#3-the-display-blocking-hazard-1-khz-timer-isr) |
+| **Keys feel sluggish or drop quick presses** | Low polling rate in main loop | [1 kHz Key Debounce](references/digital_keys.md#2-key-debouncing-1-khz-sampling-architecture) |
+| **Synth locks up / note plays forever** | `libDaisy` `Logger` blocked in `TransmitSync` after terminal closed | [Gamma Pinout USB CDC](../gamma-pinout/SKILL.md#8-usb-c-interface-usb-midi) |
 | **Buttons and encoder stop responding / freeze** | Audio callback overload / runaway DSP voice starving TIM5 ISR (NVIC priority 15) | Avoid undamped DaisySP models (`AnalogBassDrum` > 90 Hz), gate idle voices, and enforce maximum lifetime ceilings on activity gates |

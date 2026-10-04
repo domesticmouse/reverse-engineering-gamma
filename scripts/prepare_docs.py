@@ -78,6 +78,31 @@ def fix_links_for_skills(content):
     return content
 
 
+def fix_links_for_plan(content):
+    """Adjust relative links in PLAN.md so they resolve properly within docs/PLAN.md."""
+    # Convert .agents/skills/<skill>/SKILL.md -> skills/<skill>/index.md
+    content = re.sub(
+        r'\(\.agents/skills/([^/]+)/SKILL\.md\)',
+        r'(skills/\1/index.md)',
+        content
+    )
+    # Convert .agents/skills/<skill>/... -> skills/<skill>/...
+    content = re.sub(
+        r'\(\.agents/skills/([^)]+)\)',
+        r'(skills/\1)',
+        content
+    )
+    # Convert repo files outside docs (backups/, firmware/, libDaisy/) to full GitHub URLs
+    repo_url = "https://github.com/domesticmouse/reverse-engineering-gamma/blob/main"
+    for prefix in ["backups", "firmware", "libDaisy"]:
+        content = re.sub(
+            rf'\({prefix}/([^)]+)\)',
+            rf'({repo_url}/{prefix}/\1)',
+            content
+        )
+    return content
+
+
 def prepare_docs():
     """Main preparation routine."""
     print(f"Preparing documentation in {DOCS_DIR}...")
@@ -218,11 +243,15 @@ def prepare_docs():
     with open(os.path.join(TARGET_SKILLS_DIR, "index.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(skills_index_content))
 
-    # 4. Copy PLAN.md into docs/PLAN.md
+    # 4. Copy and fix PLAN.md into docs/PLAN.md
     plan_src = os.path.join(REPO_ROOT, "PLAN.md")
     plan_dest = os.path.join(DOCS_DIR, "PLAN.md")
     if os.path.exists(plan_src):
-        shutil.copyfile(plan_src, plan_dest)
+        with open(plan_src, "r", encoding="utf-8") as pf:
+            p_text = pf.read()
+        p_text = fix_links_for_plan(p_text)
+        with open(plan_dest, "w", encoding="utf-8") as pf:
+            pf.write(p_text)
 
     print(f"Successfully processed {len(skills_data)} skills into {TARGET_SKILLS_DIR}.")
 

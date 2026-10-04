@@ -60,8 +60,8 @@ Reads real-time diagnostic output transmitted from the Daisy over USB CDC (Virtu
 ### E. Electro-Smith Daisy Repositories
 The core HAL and DSP libraries for the Daisy Seed 2 DFM:
 
-  - `libDaisy`: [libDaisy/](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/libDaisy) (Hardware abstraction layer; builds `build/libdaisy.a`)
-  - `DaisySP`: [DaisySP/](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/DaisySP) (DSP synthesis library; builds `build/libdaisysp.a`)
+  - `libDaisy`: [libDaisy/](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/libDaisy) (Hardware abstraction layer; builds `build/libdaisy.a`)
+  - `DaisySP`: [DaisySP/](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/DaisySP) (DSP synthesis library; builds `build/libdaisysp.a`)
 
 ---
 
