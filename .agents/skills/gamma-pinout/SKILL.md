@@ -285,7 +285,7 @@ The rotary dial on the front panel is connected via a 4-wire harness:
       }
   };
   ```
-* **Never print from the USB receive callback:** `UsbRxCallback` runs in the USB interrupt. Queue received bytes into a ring buffer and process commands in the main loop (see `firmware/phase5_audio/main.cpp`). Support `'b'` command to execute `System::ResetToBootloader()` for automated flashing.
+* **Never print from the USB receive callback:** `UsbRxCallback` runs in the USB interrupt. Queue received bytes into a ring buffer and process commands in the main loop (see `firmware/phase5_audio/main.cpp`). Support the `'b'` command for automated flashing by calling `System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT)`. Do **not** call it with no argument: that defaults to the STM32 ROM bootloader, which cannot program the QSPI app slot at `0x90040000`.
 * **MIDI Implementation:** 
   * The Gamma Mini Synth has **no hardware 3.5mm TRS MIDI port**. All MIDI communication is handled over the USB-C connector as a class-compliant USB MIDI device.
   * In libDaisy, use `daisy::MidiUsbHandler` with `midi_cfg.transport_config.periph = daisy::MidiUsbTransport::Config::EXTERNAL`. No discrete GPIO configuration is required; libDaisy configures `PB14`/`PB15` for `USB_OTG_HS`.

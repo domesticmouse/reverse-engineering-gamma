@@ -99,6 +99,13 @@ tio /dev/cu.usbmodem*
 screen /dev/cu.usbmodem* 115200
 ```
 
+Or use the zero-dependency host tool from the [USB Connectivity skill](.agents/skills/gamma-usb-connectivity/SKILL.md):
+```bash
+python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --monitor      # stream log output
+python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --interactive  # send commands
+python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --bootloader   # reboot into DFU
+```
+
 ---
 
 ## Restoring Factory Firmware
@@ -153,6 +160,45 @@ ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
 
 ---
 
+## Custom Firmware: Gamma Drum Synth
+
+[`firmware/drum_synth`](firmware/drum_synth/main.cpp) is a seven-voice drum synthesizer built on libDaisy and DaisySP. It turns the Gamma into a playable drum machine with per-voice sound editing on the OLED.
+
+**Voices** ([`drum_voices.h`](firmware/drum_synth/drum_voices.h)), mapped to the right-hand keypad:
+
+| Key | Voice | Engine |
+| --- | --- | --- |
+| `C1` | Kick | 808-style bridged-T resonator (`AnalogBassDrum`), 30–120 Hz |
+| `C2` | Snare | 808-style resonators + noise (`AnalogSnareDrum`), 120–400 Hz |
+| `C3` | Clap | Band-passed noise with three "hand" bursts and a tail |
+| `C4` | Tom | Resonator model tuned higher (70–300 Hz) with gentler FM |
+| `C5` | Closed Hat | 808 metallic noise (`HiHat`) with custom envelope; chokes the open hat |
+| `C6` | Open Hat | 808 metallic noise with longer decay |
+| `C7` | Cymbal | 808 metallic noise with multi-second wash |
+
+**Controls:**
+
+| Control | Function |
+| --- | --- |
+| Encoder turn | Select the drum being edited (shown on OLED) |
+| Encoder click | Audition the selected drum |
+| Encoder hold 2 s | Reboot into the Daisy bootloader for a firmware update |
+| Knobs 1–4 | Level, Tune, Decay, Tone of the selected drum (soft takeover — a knob only takes effect once it passes the stored value, so sounds never jump) |
+| Right stick X | Master DJ filter (left = low-pass, right = high-pass, centre = bypass) |
+| Right stick Y | Master drive (push up) |
+
+**USB serial commands** (CDC on the USB-C port, see the [USB Connectivity skill](.agents/skills/gamma-usb-connectivity/SKILL.md)): `1`–`7` trigger voices, `p` prints all drum parameters and CPU load, `s` toggles the internal speaker, `b` reboots into the bootloader, `h`/`?` shows help.
+
+**Build & flash:**
+```bash
+make -C firmware/drum_synth
+python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py firmware/drum_synth/build/drum_synth.bin
+```
+
+Keys and the encoder are scanned in a 1 kHz timer ISR for low-latency triggering, idle voices are gated off to save CPU, and USB logging is non-blocking so the synth keeps running when the host disconnects.
+
+---
+
 ## Documentation & Developer Guides
 
 Comprehensive architectural and implementation guides for the core software stack:
@@ -166,6 +212,7 @@ Comprehensive architectural and implementation guides for the core software stac
 Operational runbooks, hardware specifications, and automated tooling are maintained as workspace skills:
 * **[Gamma Hardware Pinout & Peripheral Reference](.agents/skills/gamma-pinout/SKILL.md)**: Master pin mappings, electrical characteristics, ADC formulas, and C++ header.
 * **[Gamma Hardware Controls Guide](.agents/skills/gamma-hardware-controls/SKILL.md)**: Comprehensive guide for OLED display, keys, encoder, knobs, and joysticks.
+* **[Gamma USB Connectivity](.agents/skills/gamma-usb-connectivity/SKILL.md)**: USB CDC virtual COM port setup, deadlock-immune non-blocking logging, host↔synth command dispatch, drop-in firmware driver (`gamma_usb.h`), and zero-dependency Python host tool (`gamma_usb.py`) for testing, monitoring, interactive control, and rebooting into the bootloader.
 * **[Gamma Firmware Flashing](.agents/skills/gamma-firmware-flash/SKILL.md)**: Detailed runbook and automated polling script (`flash_firmware.py`).
 * **[Gamma Firmware Restore](.agents/skills/gamma-firmware-restore/SKILL.md)**: Detailed runbook and automated restore script (`restore_firmware.py`).
 * **[libDaisy Developer Guide](.agents/skills/libdaisy-guide/SKILL.md)**: Architectural reference and API guide for libDaisy hardware abstraction.
@@ -183,6 +230,8 @@ Operational runbooks, hardware specifications, and automated tooling are maintai
 - [x] **Phase 3 (Analog Pin Mapping):** All 4 potentiometers (`K0`–`K3` on `seed::D18`, `D17`, `D19`, `D20`) and 2 dual-axis joysticks (`LX`, `LY`, `RX`, `RY` on `seed::D22`, `D21`, `D24`, `D23`) mapped, calibrated, and verified on hardware with real-time OLED bargraphs.
 - [x] **Phase 4 (Digital Pin Mapping):** All 14 discrete tactile keys (7 note keys `N1`–`N7` on `seed::D1`–`D7`, 7 chord keys `C1`–`C7` on `seed::D8`–`D10`, `D13`, `D14`, `D26`, `D27`), rotary encoder quadrature pins (`seed::D15`, `seed::D16`) with Buxton FSM decoder, encoder click (`seed::D28`), speaker amp enable (`seed::D32` / `PC3`), and power fault sense (`seed::D0`) verified on hardware.
 - [ ] **Phase 5 (Audio & MIDI Verification - ACTIVE):** Stereo audio engine implemented (`firmware/phase5_audio`) using libDaisy & DaisySP with PCM3060 codec via SAI1 @ 48 kHz (interactive synth with 7 notes + 7 polyphonic triad chords, dual SVF filters, joystick modulation, test tone mode). Audio engine ready for hardware validation; USB MIDI device implementation upcoming.
+- [x] **USB Connectivity:** Non-blocking, deadlock-immune USB CDC logging and bidirectional host command dispatch documented in the [`gamma-usb-connectivity`](.agents/skills/gamma-usb-connectivity/SKILL.md) skill, with a drop-in firmware driver and Python host tool.
+- [x] **Drum Synth Firmware:** Seven-voice drum synthesizer (`firmware/drum_synth`) with per-voice Level/Tune/Decay/Tone editing, soft-takeover knobs, master DJ filter and drive, OLED UI, and USB serial control. See [Custom Firmware: Gamma Drum Synth](#custom-firmware-gamma-drum-synth).
 - [ ] **Phase 6 (Gamma Board Support Package):** Create unified `gamma_hw` C++ Board Support Package (BSP) and polyphonic synthesizer reference firmware.
 
 ---
