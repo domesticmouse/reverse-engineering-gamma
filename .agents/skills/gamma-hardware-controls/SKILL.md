@@ -86,3 +86,4 @@ Consult the detailed topical references below for full code snippets, electrical
 | **Rotary encoder misses clicks while turning** | Main loop blocked by `oled.Update()` (9–23 ms) | [1 kHz Timer Architecture](references/rotary_encoder.md#3-the-display-blocking-hazard--1-khz-timer-isr) |
 | **Keys feel sluggish or drop quick presses** | Low polling rate in main loop | [1 kHz Key Debounce](references/digital_keys.md#2-key-debouncing--1-khz-sampling-architecture) |
 | **Internal case speakers silent** | Pin `PC3` held LOW or uninitialized | [Main Loop Blueprint (Speaker Amp)](references/main_loop_blueprint.md#2-integrated-implementation-skeleton) |
+| **Synth locks up / note plays forever** | `libDaisy` `Logger` blocked in `TransmitSync` after terminal closed | [Gamma Pinout USB CDC](file:///Users/brett/Documents/GitHub/reverse-engineering-gamma/.agents/skills/gamma-pinout/SKILL.md#8-usb-c-interface--usb-midi) |

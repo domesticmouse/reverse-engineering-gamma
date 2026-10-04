@@ -69,6 +69,16 @@ def poll_and_flash(bin_path, timeout=60):
     print(f"[*] Please reset your Gamma (tap RESET or power-cycle) now (timeout: {timeout}s)...")
     sys.stdout.flush()
 
+    import glob
+    for dev in glob.glob("/dev/cu.usbmodem*"):
+        try:
+            print(f"[*] Detected USB CDC port {dev}, sending software DFU reboot command ('b')...")
+            fd = os.open(dev, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+            os.write(fd, b'b')
+            os.close(fd)
+        except Exception:
+            pass
+
     start_time = time.time()
     found = False
 

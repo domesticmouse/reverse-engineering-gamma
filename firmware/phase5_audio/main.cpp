@@ -4,6 +4,7 @@
 #include "dev/oled_ssd130x.h"
 #include "util/oled_fonts.h"
 #include <cstdio>
+#include <cstdarg>
 #include <cmath>
 
 using namespace daisy;
@@ -11,10 +12,87 @@ using namespace daisysp;
 
 DaisySeed hw;
 
-// The Gamma's USB-C connector is wired to the Seed's *external* USB pins (D29/D30 -> USB_OTG_HS
-// in FS mode), not the internal PA11/PA12 port used by DaisySeed::StartLog()/PrintLine().
-// Verified on hardware: OTG_FS never receives SOF frames, while the bootloader enumerates fine.
-using UsbLog = Logger<LOGGER_EXTERNAL>;
+// ========================================================================
+// Non-blocking, deadlock-immune USB CDC Logger
+// ========================================================================
+// Replaces libDaisy's Logger<LOGGER_EXTERNAL>, whose TransmitSync() enters an infinite
+// while-loop when a host terminal closes or stops polling the USB CDC IN endpoint.
+// Uses a 4-buffer pool with a 500 us timeout and fast failure bypass so that logging
+// NEVER hangs the main loop or starves key/audio event processing.
+struct UsbLog
+{
+    static void StartLog(bool wait_for_pc = false)
+    {
+        (void)wait_for_pc;
+        hw.usb_handle.Init(UsbHandle::FS_EXTERNAL);
+    }
+
+    static void Print(const char* format, ...)
+    {
+        va_list args;
+        va_start(args, format);
+        LogInternal(false, format, args);
+        va_end(args);
+    }
+
+    static void PrintLine(const char* format, ...)
+    {
+        va_list args;
+        va_start(args, format);
+        LogInternal(true, format, args);
+        va_end(args);
+    }
+
+private:
+    static void LogInternal(bool newline, const char* format, va_list args)
+    {
+        static constexpr size_t kNumBufs = 4;
+        static constexpr size_t kBufSize = 256;
+        static char             s_tx_bufs[kNumBufs][kBufSize];
+        static size_t           s_cur_buf         = 0;
+        static uint32_t         s_last_timeout_ms = 0;
+
+        char* buf = s_tx_bufs[s_cur_buf];
+        int   len = vsnprintf(buf, kBufSize - 3, format, args);
+        if(len <= 0)
+            return;
+        if(len > (int)(kBufSize - 3))
+            len = kBufSize - 3;
+
+        if(newline)
+        {
+            buf[len++] = '\r';
+            buf[len++] = '\n';
+            buf[len]   = '\0';
+        }
+
+        uint32_t now_ms = System::GetNow();
+        // If the host previously timed out within the last 200 ms, try only once without waiting.
+        // This prevents back-to-back log calls from stacking delays when disconnected.
+        if(s_last_timeout_ms > 0 && (now_ms - s_last_timeout_ms < 200))
+        {
+            if(hw.usb_handle.TransmitExternal((uint8_t*)buf, len) == UsbHandle::Result::OK)
+            {
+                s_last_timeout_ms = 0;
+                s_cur_buf         = (s_cur_buf + 1) % kNumBufs;
+            }
+            return;
+        }
+
+        // Host is connected or timeout window expired: attempt transmission, allowing up to 500 us for in-flight packet
+        uint32_t start_us = System::GetUs();
+        while(hw.usb_handle.TransmitExternal((uint8_t*)buf, len) != UsbHandle::Result::OK)
+        {
+            if(System::GetUs() - start_us >= 500)
+            {
+                s_last_timeout_ms = System::GetNow();
+                return; // Drop message safely without blocking
+            }
+        }
+        s_last_timeout_ms = 0;
+        s_cur_buf         = (s_cur_buf + 1) % kNumBufs;
+    }
+};
 
 // ========================================================================
 // OLED Display Setup (SSD1306 128x64 on I2C1, D11/D12 @ 0x3D)

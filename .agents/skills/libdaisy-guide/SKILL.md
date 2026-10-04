@@ -196,17 +196,20 @@ if (btn.RisingEdge())
 
 ### 6.3 USB CDC Serial Logging
 
+> [!CAUTION]
+> **libDaisy Logger Blocking Hazard:** `Logger<LOGGER_EXTERNAL>` starts in non-blocking mode, but automatically transitions to synchronous blocking mode (`LOGGER_SYNC_IN`) after successfully transmitting 2 packets. Once in sync mode, `TransmitSync()` runs `while(false == impl_.Transmit) {}` with **no timeout**. If a host terminal or test script disconnects or stops reading, any subsequent log line in the main loop spins indefinitely in this loop. Because the main thread freezes while the audio DMA interrupt continues, **the synth locks up with a note stuck playing continuously**.
+
 > [!IMPORTANT]
-> **Gamma:** the USB-C jack is wired to the Seed's *external* USB port (`D29`/`D30`). `hw.StartLog()` / `hw.PrintLine()` target the internal port and never enumerate. Use `using UsbLog = Logger<LOGGER_EXTERNAL>;` with `UsbLog::StartLog()` / `UsbLog::PrintLine()` and `UsbHandle::FS_EXTERNAL`. Never print from a USB receive callback (ISR deadlock) — see the `gamma-pinout` skill §8.
+> **Gamma:** the USB-C jack is wired to the Seed's *external* USB pins (`D29`/`D30`). `hw.StartLog()` / `hw.PrintLine()` target the internal port and never enumerate. Always use `UsbHandle::FS_EXTERNAL` and a **deadlock-immune non-blocking logger** with a microsecond-level timeout (`System::GetUs()`) and failure bypass (see `gamma-pinout` skill §8 and `firmware/phase5_audio/main.cpp`). Never print from a USB receive callback (ISR deadlock).
 
 ```cpp
 hw.Init();
-hw.StartLog(false); // true to block until a PC serial terminal connects
+UsbLog::StartLog(false); // Custom non-blocking logger on FS_EXTERNAL
 
 while (1)
 {
     System::Delay(500);
-    hw.PrintLine("Daisy running, Tick: %d", System::GetTick());
+    UsbLog::PrintLine("Daisy running, Tick: %d", System::GetTick());
 }
 ```
 
@@ -241,6 +244,7 @@ int main(void)
 | Symptom | Probable Cause | Corrective Action |
 | :--- | :--- | :--- |
 | **Audio glitches / crackling** | Callback overrun or blocking call in ISR | Use `CpuLoadMeter` to measure budget. Move all I2C, SPI, OLED, and flash operations to the main `while(1)` loop. |
+| **Synth freezes with note stuck playing** | `libDaisy`'s `Logger` entered blocking `TransmitSync` after USB host closed/disconnected | Replace `Logger<LOGGER_EXTERNAL>` with a non-blocking timeout-guarded logger (`System::GetUs()` < 500 us timeout). See §6.3. |
 | **ADC / SPI data corrupted or stale** | CPU D-cache reading stale memory | Decorate DMA buffers with `DMA_BUFFER_MEM_SECTION` (places them in non-cached SRAM1). |
 | **HardFault on startup** | Accessing uninitialized SDRAM or DMA from DTCM | Ensure global SDRAM arrays use `DSY_SDRAM_BSS` without static constructors. Do not route DMA to `DTCM_MEM_SECTION`. |
 | **Firmware rejected by bootloader** | Mismatched linker script / vector table | Verify `APP_TYPE = BOOT_SRAM` is set in the `Makefile`. |

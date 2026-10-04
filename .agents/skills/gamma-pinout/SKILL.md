@@ -218,14 +218,74 @@ The rotary dial on the front panel is connected via a 4-wire harness:
 
 * **Port:** The USB-C connector is wired to the Seed's **external** USB pins: `seed::D29` (`PB14`, D-) and `seed::D30` (`PB15`, D+), driven by `USB_OTG_HS` in Full Speed (12 Mbps) mode. The internal `PA11`/`PA12` (`USB_OTG_FS`) port is **not connected** to the jack.
   * *Hardware evidence:* with CDC on `FS_INTERNAL`, `USB_OTG_FS` was powered, B-valid overridden and D+ pulled up (`DCTL.SDIS = 0`), yet `DSTS` frame number stayed `0` (no SOF from the host) and macOS never enumerated it. Switching to `FS_EXTERNAL` enumerates immediately as `Daisy Seed External` (`0483:5740`).
-* **USB CDC Serial (diagnostics):** `DaisySeed::StartLog()` / `hw.PrintLine()` are hard-wired to the internal port and will never appear on the host. Use the external logger instead:
+* **USB CDC Serial (diagnostics):** `DaisySeed::StartLog()` / `hw.PrintLine()` are hard-wired to the internal port and will never appear on the host. Always initialize CDC on `UsbHandle::FS_EXTERNAL`.
+* **CRITICAL: The `Logger<LOGGER_EXTERNAL>` Deadlock Hazard:**
+  * `daisy::Logger<LOGGER_EXTERNAL>` starts in non-blocking mode (`LOGGER_SYNC_OUT`). However, as soon as it successfully transmits 2 packets to a host terminal, it permanently switches to synchronous blocking mode (`LOGGER_SYNC_IN`).
+  * In blocking mode, `TransmitSync()` runs `while(false == impl_.Transmit) {}` with **no timeout**.
+  * When a host terminal or script closes the port or stops reading, `CDC_Transmit_HS()` returns `USBD_BUSY` forever. Any subsequent log call in the main loop (e.g., when a key is pressed) enters an **infinite loop**, freezing the main loop.
+  * Because the main loop freezes while the audio DMA interrupt keeps running, **the synth locks up with a note stuck playing continuously**!
+* **Deadlock-Immune Non-Blocking Logger Pattern:**
+  Replace `Logger<LOGGER_EXTERNAL>` with a custom timeout-guarded logger using `hw.usb_handle.TransmitExternal()`:
   ```cpp
-  using UsbLog = daisy::Logger<daisy::LOGGER_EXTERNAL>;
-  UsbLog::StartLog(false);
-  hw.usb_handle.SetReceiveCallback(UsbRxCallback, daisy::UsbHandle::UsbPeriph::FS_EXTERNAL);
-  UsbLog::PrintLine("Hello from Gamma");
+  struct UsbLog
+  {
+      static void StartLog(bool wait_for_pc = false)
+      {
+          (void)wait_for_pc;
+          hw.usb_handle.Init(UsbHandle::FS_EXTERNAL);
+      }
+
+      static void PrintLine(const char* format, ...)
+      {
+          va_list args;
+          va_start(args, format);
+          LogInternal(true, format, args);
+          va_end(args);
+      }
+
+  private:
+      static void LogInternal(bool newline, const char* format, va_list args)
+      {
+          static constexpr size_t kNumBufs = 4;
+          static constexpr size_t kBufSize = 256;
+          static char   s_tx_bufs[kNumBufs][kBufSize];
+          static size_t s_cur_buf         = 0;
+          static uint32_t s_last_timeout_ms = 0;
+
+          char* buf = s_tx_bufs[s_cur_buf];
+          int   len = vsnprintf(buf, kBufSize - 3, format, args);
+          if(len <= 0) return;
+          if(len > (int)(kBufSize - 3)) len = kBufSize - 3;
+          if(newline) { buf[len++] = '\r'; buf[len++] = '\n'; buf[len] = '\0'; }
+
+          uint32_t now_ms = System::GetNow();
+          // Fast-fail bypass if recently timed out to avoid stacking delays
+          if(s_last_timeout_ms > 0 && (now_ms - s_last_timeout_ms < 200))
+          {
+              if(hw.usb_handle.TransmitExternal((uint8_t*)buf, len) == UsbHandle::Result::OK)
+              {
+                  s_last_timeout_ms = 0;
+                  s_cur_buf         = (s_cur_buf + 1) % kNumBufs;
+              }
+              return;
+          }
+
+          // Allow up to 500 us for an in-flight packet to complete
+          uint32_t start_us = System::GetUs();
+          while(hw.usb_handle.TransmitExternal((uint8_t*)buf, len) != UsbHandle::Result::OK)
+          {
+              if(System::GetUs() - start_us >= 500)
+              {
+                  s_last_timeout_ms = System::GetNow();
+                  return; // Drop message safely; NEVER hang the synth!
+              }
+          }
+          s_last_timeout_ms = 0;
+          s_cur_buf         = (s_cur_buf + 1) % kNumBufs;
+      }
+  };
   ```
-* **Never print from the USB receive callback:** `UsbRxCallback` runs in the USB interrupt. Once a host terminal is connected the logger switches to a blocking `TransmitSync()`, which waits for a TX-complete interrupt that cannot fire while still inside the USB ISR — the firmware deadlocks. Queue received bytes in the callback and handle/print them from the main loop (see `firmware/phase5_audio/main.cpp`).
+* **Never print from the USB receive callback:** `UsbRxCallback` runs in the USB interrupt. Queue received bytes into a ring buffer and process commands in the main loop (see `firmware/phase5_audio/main.cpp`). Support `'b'` command to execute `System::ResetToBootloader()` for automated flashing.
 * **MIDI Implementation:** 
   * The Gamma Mini Synth has **no hardware 3.5mm TRS MIDI port**. All MIDI communication is handled over the USB-C connector as a class-compliant USB MIDI device.
   * In libDaisy, use `daisy::MidiUsbHandler` with `midi_cfg.transport_config.periph = daisy::MidiUsbTransport::Config::EXTERNAL`. No discrete GPIO configuration is required; libDaisy configures `PB14`/`PB15` for `USB_OTG_HS`.
