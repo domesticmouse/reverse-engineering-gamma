@@ -71,7 +71,7 @@ Explore the key sections of this documentation suite:
 
 <div class="grid cards" markdown>
 
--   :material-robot:{ .lg .middle } **[Skills Catalog](skills/index.md)**
+- :material-robot:{ .lg .middle } **[Skills Catalog](skills/index.md)**
 
     ---
 
@@ -79,7 +79,7 @@ Explore the key sections of this documentation suite:
 
     [:octicons-arrow-right-24: Browse Skills](skills/index.md)
 
--   :material-sine-wave:{ .lg .middle } **[DaisySP Deep Dive](DAISYSP_GUIDE.md)**
+- :material-sine-wave:{ .lg .middle } **[DaisySP Deep Dive](DAISYSP_GUIDE.md)**
 
     ---
 
@@ -87,7 +87,7 @@ Explore the key sections of this documentation suite:
 
     [:octicons-arrow-right-24: Read DaisySP Guide](DAISYSP_GUIDE.md)
 
--   :material-chip:{ .lg .middle } **[libDaisy Deep Dive](LIBDAISY_GUIDE.md)**
+- :material-chip:{ .lg .middle } **[libDaisy Deep Dive](LIBDAISY_GUIDE.md)**
 
     ---
 
@@ -95,7 +95,7 @@ Explore the key sections of this documentation suite:
 
     [:octicons-arrow-right-24: Read libDaisy Guide](LIBDAISY_GUIDE.md)
 
--   :material-map-legend:{ .lg .middle } **[Reverse Engineering Roadmap](PLAN.md)**
+- :material-map-legend:{ .lg .middle } **[Reverse Engineering Roadmap](PLAN.md)**
 
     ---
 
@@ -109,8 +109,8 @@ Explore the key sections of this documentation suite:
 
 ## Quick Reference Links
 
-* **GitHub Repository:** [domesticmouse/reverse-engineering-gamma](https://github.com/domesticmouse/reverse-engineering-gamma)
-* **Master Pin Header:** [`resources/gamma_pins.h`](skills/gamma-pinout/resources/gamma_pins.h)
-* **Firmware Flashing Runbook:** [gamma-firmware-flash](skills/gamma-firmware-flash/index.md)
-* **Unbricking & Recovery Runbook:** [gamma-firmware-restore](skills/gamma-firmware-restore/index.md)
-* **USB CDC & Python Tools:** [gamma-usb-connectivity](skills/gamma-usb-connectivity/index.md)
+- **GitHub Repository:** [domesticmouse/reverse-engineering-gamma](https://github.com/domesticmouse/reverse-engineering-gamma)
+- **Master Pin Header:** [`resources/gamma_pins.h`](skills/gamma-pinout/resources/gamma_pins.h)
+- **Firmware Flashing Runbook:** [gamma-firmware-flash](skills/gamma-firmware-flash/index.md)
+- **Unbricking & Recovery Runbook:** [gamma-firmware-restore](skills/gamma-firmware-restore/index.md)
+- **USB CDC & Python Tools:** [gamma-usb-connectivity](skills/gamma-usb-connectivity/index.md)

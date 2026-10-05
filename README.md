@@ -9,6 +9,7 @@ The Gamma synth is powered by an embedded **Electro-Smith Daisy Seed 2 DFM** (AR
 ## Hardware Overview
 
 The Gamma features a compact, performance-oriented interface:
+
 * **Core:** Electro-Smith Daisy Seed 2 DFM (ARM Cortex-M7 @ 480 MHz, STM32H750IBK6, 128 KB internal flash, 1 MB RAM, 64 MB external QSPI flash)
 * **Display:** 1.3" 128x64 monochrome OLED display (Solomon Systech SSD1306 controller via `I2C1` on `seed::D11` / `PB8` [SCL] & `seed::D12` / `PB9` [SDA] at address `0x3D`)
 * **Keys:** 14 discrete low-profile tactile switches with internal pull-ups (active low):
@@ -40,6 +41,7 @@ The documentation website is hosted on GitHub Pages:
 👉 **[https://domesticmouse.github.io/reverse-engineering-gamma/](https://domesticmouse.github.io/reverse-engineering-gamma/)**
 
 The site is built with Material for MkDocs and automatically updated on each commit to the `main` branch via GitHub Actions:
+
 * **[Agent Skills Catalog](https://domesticmouse.github.io/reverse-engineering-gamma/skills/)**: Front-panel hardware drivers, pinout tables, firmware flashing runbooks, recovery workflows, and audio engine blueprints.
 * **[DaisySP Guide](https://domesticmouse.github.io/reverse-engineering-gamma/DAISYSP_GUIDE/)**: DSP synthesis modules, filters, dynamics, memory footprints, and audio recipes.
 * **[libDaisy Guide](https://domesticmouse.github.io/reverse-engineering-gamma/LIBDAISY_GUIDE/)**: STM32H750 HAL, memory sections (AXI SRAM, DTCM), DMA cache coherency, and audio engine architecture.
@@ -50,6 +52,7 @@ The site is built with Material for MkDocs and automatically updated on each com
 ## Reverse-Engineering Roadmap
 
 For the detailed step-by-step plan covering software setup, non-destructive flash dumping, diagnostic firmware probing, pin mapping, and BSP creation, see:
+
 * **[PLAN.md](PLAN.md)**: Reverse-Engineering and Pinout Mapping Plan
 
 ---
@@ -61,9 +64,11 @@ The Gamma runs the **Electro-Smith Daisy Bootloader** in internal flash (`0x0800
 ### Prerequisites & Build Target
 
 * **Target Architecture:** Binaries **must** be compiled with `APP_TYPE = BOOT_SRAM` in your `Makefile`:
+
   ```makefile
   APP_TYPE = BOOT_SRAM
   ```
+
   *(The bootloader copies the binary from QSPI flash to SRAM at `0x24000000`. Do not use `BOOT_QSPI` or `BOOT_NONE`; the Daisy Bootloader will reject the binary and show an SOS LED blink error).*
 * **QSPI Flash Address:** `0x90040000`
 
@@ -86,26 +91,33 @@ python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py firmware/p
 ### Method 2: Manual Terminal Flashing (`dfu-util`)
 
 1. Build your firmware:
+
    ```bash
    make clean && make
    ```
+
 2. Put the Daisy Seed into bootloader mode:
-   - Hold **BOOT**, press and release **RESET**, then release **BOOT** (or tap **BOOT** during startup to extend bootloader mode).
+   * Hold **BOOT**, press and release **RESET**, then release **BOOT** (or tap **BOOT** during startup to extend bootloader mode).
 3. Check that the bootloader is detected:
+
    ```bash
    dfu-util -l
    ```
+
    *(Expected: `Found DFU: [0483:df11] ... Product: "Daisy Bootloader" (Electrosmith)`)*
 4. Flash the binary to QSPI flash:
+
    ```bash
    dfu-util -a 0 -s 0x90040000:leave -D build/<firmware_name>.bin
    ```
+
    > [!NOTE]
    > A `dfu-util: Error during download get_status` / exit code `74` message upon `:leave` is normal; the MCU resets immediately upon flashing completion before the final USB query can complete.
 
 ### Serial Output Verification
 
 For diagnostic firmware with USB serial logging enabled:
+
 ```bash
 tio /dev/cu.usbmodem*
 # or
@@ -113,6 +125,7 @@ screen /dev/cu.usbmodem* 115200
 ```
 
 Or use the zero-dependency host tool from the [USB Connectivity skill](.agents/skills/gamma-usb-connectivity/SKILL.md):
+
 ```bash
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --monitor      # stream log output
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --interactive  # send commands
@@ -128,6 +141,7 @@ If custom firmware halts, crashes, or you want to return the synthesizer to stoc
 ### Method 1: Automated CLI Restore (Recommended)
 
 Run the automated restore script:
+
 ```bash
 python3 .agents/skills/gamma-firmware-restore/scripts/restore_firmware.py
 ```
@@ -140,13 +154,16 @@ python3 .agents/skills/gamma-firmware-restore/scripts/restore_firmware.py
 ### Method 2: Manual Terminal Flash (`dfu-util`)
 
 1. Ensure the factory binary is present:
+
    ```bash
    # Already cached in repository:
    ls -lh backups/gamma-v2.0.3.bin
    ```
+
    *(If needed, download directly: `curl -L -o backups/gamma-v2.0.3.bin https://gammaupdatetool.netlify.app/data/gamma-v2.0.3.bin`)*
 2. Put the device into bootloader mode (Hold **BOOT**, tap **RESET**, release **BOOT**).
 3. Flash the stock binary:
+
    ```bash
    dfu-util -a 0 -s 0x90040000:leave -D backups/gamma-v2.0.3.bin
    ```
@@ -154,6 +171,7 @@ python3 .agents/skills/gamma-firmware-restore/scripts/restore_firmware.py
 ### Method 3: Browser Web Recovery
 
 If you prefer using a web browser:
+
 1. Navigate to the official [Gamma Update Tool](https://gammaupdatetool.netlify.app/).
 2. Expand **Troubleshooting** → **"Can't Enter Boot"**.
 3. Click **"Connect & Install"**.
@@ -164,10 +182,12 @@ If you prefer using a web browser:
 ### Post-Restore Verification
 
 Verify that the Gamma enumerates as a USB MIDI/audio device:
+
 ```bash
 # macOS USB enumeration check:
 ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
 ```
+
 * The device will enumerate with `kUSBProductString` = `"Gamma"` (`0483:5740`).
 * The 1.3" OLED will display the active Gamma synthesizer interface.
 
@@ -203,6 +223,7 @@ ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
 **USB serial commands** (CDC on the USB-C port, see the [USB Connectivity skill](.agents/skills/gamma-usb-connectivity/SKILL.md)): `1`–`7` trigger voices, `p` prints all drum parameters and CPU load, `s` toggles the internal speaker, `b` reboots into the bootloader, `h`/`?` shows help.
 
 **Build & flash:**
+
 ```bash
 make -C firmware/drum_synth
 python3 .agents/skills/gamma-firmware-flash/scripts/flash_firmware.py firmware/drum_synth/build/drum_synth.bin
@@ -215,6 +236,7 @@ Keys and the encoder are scanned in a 1 kHz timer ISR for low-latency triggering
 ## Documentation & Developer Guides
 
 Comprehensive architectural and implementation guides for the core software stack:
+
 * **[Comprehensive Guide to libDaisy](docs/LIBDAISY_GUIDE.md)**: Hardware abstraction, STM32H750 memory layout, peripherals (ADC/DMA, I2C, SPI, SAI), audio engine, graphics canvas, and board support packages.
 * **[Comprehensive Guide to DaisySP](docs/DAISYSP_GUIDE.md)**: Digital Signal Processing library guide covering all 60+ synthesis, filter, effect, percussion, physical modeling, dynamics, and utility modules, lifecycle conventions, memory management, and practical DSP recipes.
 
@@ -223,6 +245,7 @@ Comprehensive architectural and implementation guides for the core software stac
 ## Skills & Runbooks
 
 Operational runbooks, hardware specifications, and automated tooling are maintained as workspace skills:
+
 * **[Gamma Hardware Pinout & Peripheral Reference](.agents/skills/gamma-pinout/SKILL.md)**: Master pin mappings, electrical characteristics, ADC formulas, and C++ header.
 * **[Gamma Hardware Controls Guide](.agents/skills/gamma-hardware-controls/SKILL.md)**: Comprehensive guide for OLED display, keys, encoder, knobs, and joysticks.
 * **[Gamma USB Connectivity](.agents/skills/gamma-usb-connectivity/SKILL.md)**: USB CDC virtual COM port setup, deadlock-immune non-blocking logging, host↔synth command dispatch, drop-in firmware driver (`gamma_usb.h`), and zero-dependency Python host tool (`gamma_usb.py`) for testing, monitoring, interactive control, and rebooting into the bootloader.
@@ -235,27 +258,29 @@ Operational runbooks, hardware specifications, and automated tooling are maintai
 
 ## Project Status
 
-- [x] **Toolchain & Software:** ARM toolchain (`arm-none-eabi-gcc 15.3.1`), `dfu-util 0.11`, `make`, and serial monitors (`tio`, `minicom`, `screen`) confirmed working.
-- [x] **Submodules:** `libDaisy` and `DaisySP` linked as Git submodules and compiled.
-- [x] **Phase 0 (Baseline Verification & Safety Net):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Factory firmware binaries (`gamma-v2.0.3.bin` and `gamma1_1.bin`) downloaded, analyzed via disassembly, and verified. Automated restore and flashing skills created and tested.
-- [x] **Phase 1 (Diagnostic Console & I2C Scan):** USB CDC virtual COM port established. Scanned candidate I2C peripherals and discovered SSD1306 OLED display responding on `I2C1` (`seed::D11`/`seed::D12`) at address `0x3D`.
-- [x] **Phase 2 (OLED Display Initialization & UI):** SSD1306 128x64 OLED display driver verified on hardware with real-time diagnostic dashboard and uptime rendering.
-- [x] **Phase 3 (Analog Pin Mapping):** All 4 potentiometers (`K0`–`K3` on `seed::D18`, `D17`, `D19`, `D20`) and 2 dual-axis joysticks (`LX`, `LY`, `RX`, `RY` on `seed::D22`, `D21`, `D24`, `D23`) mapped, calibrated, and verified on hardware with real-time OLED bargraphs.
-- [x] **Phase 4 (Digital Pin Mapping):** All 14 discrete tactile keys (7 note keys `N1`–`N7` on `seed::D1`–`D7`, 7 chord keys `C1`–`C7` on `seed::D8`–`D10`, `D13`, `D14`, `D26`, `D27`), rotary encoder quadrature pins (`seed::D15`, `seed::D16`) with Buxton FSM decoder, encoder click (`seed::D28`), speaker amp enable (`seed::D32` / `PC3`), and power fault sense (`seed::D0`) verified on hardware.
-- [ ] **Phase 5 (Audio & MIDI Verification - ACTIVE):** Stereo audio engine implemented (`firmware/phase5_audio`) using libDaisy & DaisySP with PCM3060 codec via SAI1 @ 48 kHz (interactive synth with 7 notes + 7 polyphonic triad chords, dual SVF filters, joystick modulation, test tone mode). Audio engine ready for hardware validation; USB MIDI device implementation upcoming.
-- [x] **USB Connectivity:** Non-blocking, deadlock-immune USB CDC logging and bidirectional host command dispatch documented in the [`gamma-usb-connectivity`](.agents/skills/gamma-usb-connectivity/SKILL.md) skill, with a drop-in firmware driver and Python host tool.
-- [x] **Drum Synth Firmware:** Seven-voice drum synthesizer (`firmware/drum_synth`) with per-voice Level/Tune/Decay/Tone editing, soft-takeover knobs, master DJ filter and drive, OLED UI, and USB serial control. See [Custom Firmware: Gamma Drum Synth](#custom-firmware-gamma-drum-synth).
-- [ ] **Phase 6 (Gamma Board Support Package):** Create unified `gamma_hw` C++ Board Support Package (BSP) and polyphonic synthesizer reference firmware.
+* [x] **Toolchain & Software:** ARM toolchain (`arm-none-eabi-gcc 15.3.1`), `dfu-util 0.11`, `make`, and serial monitors (`tio`, `minicom`, `screen`) confirmed working.
+* [x] **Submodules:** `libDaisy` and `DaisySP` linked as Git submodules and compiled.
+* [x] **Phase 0 (Baseline Verification & Safety Net):** Daisy Bootloader identified over USB DFU (`0483:df11`, Electrosmith Daisy Bootloader). Factory firmware binaries (`gamma-v2.0.3.bin` and `gamma1_1.bin`) downloaded, analyzed via disassembly, and verified. Automated restore and flashing skills created and tested.
+* [x] **Phase 1 (Diagnostic Console & I2C Scan):** USB CDC virtual COM port established. Scanned candidate I2C peripherals and discovered SSD1306 OLED display responding on `I2C1` (`seed::D11`/`seed::D12`) at address `0x3D`.
+* [x] **Phase 2 (OLED Display Initialization & UI):** SSD1306 128x64 OLED display driver verified on hardware with real-time diagnostic dashboard and uptime rendering.
+* [x] **Phase 3 (Analog Pin Mapping):** All 4 potentiometers (`K0`–`K3` on `seed::D18`, `D17`, `D19`, `D20`) and 2 dual-axis joysticks (`LX`, `LY`, `RX`, `RY` on `seed::D22`, `D21`, `D24`, `D23`) mapped, calibrated, and verified on hardware with real-time OLED bargraphs.
+* [x] **Phase 4 (Digital Pin Mapping):** All 14 discrete tactile keys (7 note keys `N1`–`N7` on `seed::D1`–`D7`, 7 chord keys `C1`–`C7` on `seed::D8`–`D10`, `D13`, `D14`, `D26`, `D27`), rotary encoder quadrature pins (`seed::D15`, `seed::D16`) with Buxton FSM decoder, encoder click (`seed::D28`), speaker amp enable (`seed::D32` / `PC3`), and power fault sense (`seed::D0`) verified on hardware.
+* [ ] **Phase 5 (Audio & MIDI Verification - ACTIVE):** Stereo audio engine implemented (`firmware/phase5_audio`) using libDaisy & DaisySP with PCM3060 codec via SAI1 @ 48 kHz (interactive synth with 7 notes + 7 polyphonic triad chords, dual SVF filters, joystick modulation, test tone mode). Audio engine ready for hardware validation; USB MIDI device implementation upcoming.
+* [x] **USB Connectivity:** Non-blocking, deadlock-immune USB CDC logging and bidirectional host command dispatch documented in the [`gamma-usb-connectivity`](.agents/skills/gamma-usb-connectivity/SKILL.md) skill, with a drop-in firmware driver and Python host tool.
+* [x] **Drum Synth Firmware:** Seven-voice drum synthesizer (`firmware/drum_synth`) with per-voice Level/Tune/Decay/Tone editing, soft-takeover knobs, master DJ filter and drive, OLED UI, and USB serial control. See [Custom Firmware: Gamma Drum Synth](#custom-firmware-gamma-drum-synth).
+* [ ] **Phase 6 (Gamma Board Support Package):** Create unified `gamma_hw` C++ Board Support Package (BSP) and polyphonic synthesizer reference firmware.
 
 ---
 
 ## Helpful Resources & Links
 
 ### Hardware & Manufacturer
+
 * [this.is.NOISE inc. Official Site](https://thisisnoiseinc.com)
 * [this.is.NOISE inc. Gamma Product Page](https://thisisnoiseinc.com/pages/gamma)
 
 ### Daisy Seed & Embedded Platform
+
 * [Electro-Smith Daisy Seed 2 DFM](https://daisy.audio/pages/daisy-seed2-dfm)
 * [Electro-Smith libDaisy GitHub Repository](https://github.com/electro-smith/libDaisy)
 * [Electro-Smith DaisySP DSP Library GitHub Repository](https://github.com/electro-smith/DaisySP)

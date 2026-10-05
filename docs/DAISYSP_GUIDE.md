@@ -31,11 +31,13 @@ DaisySP adheres to rigorous real-time audio engineering constraints:
    DaisySP modules **never** invoke `malloc`, `calloc`, `realloc`, `free`, or the C++ operators `new` and `delete` inside runtime processing loops. Memory is either statically reserved within the class instance, passed as a compile-time template parameter (e.g., `DelayLine<float, 48000>`), or injected by pointer at initialization (e.g., `GranularPlayer::Init(buffer, size, sr)`). This guarantees deterministic execution, zero heap fragmentation, and immunity from allocation failures in real-time interrupt contexts.
 2. **Single-Sample Processing Standard:**
    Unless explicitly designed for block operations (such as `Limiter::ProcessBlock` or CMSIS-accelerated `FIRFilterImplARM`), all DaisySP modules evaluate audio via a sample-by-sample method:
+
    ```cpp
    float output = module.Process(input);
    // or
    float output = module.Process();
    ```
+
    This model allows maximum flexibility for arbitrary feedback loops, sample-accurate frequency modulation, cross-modulation, and dynamic control graphs without requiring fixed block-size scheduling.
 3. **Normalized 32-Bit Floating Point Standard:**
    All signal pathways, audio samples, and control voltages use standard IEEE 754 32-bit floating point (`float`). Audio signals are normalized nominally to the range **$[-1.0\text{f}, +1.0\text{f}]$** (corresponding to 0 dBFS), while control signals, envelopes, and modulation depths typically occupy normalized ranges of $[0.0\text{f}, 1.0\text{f}]$ or $[-1.0\text{f}, +1.0\text{f}]$.
@@ -90,7 +92,7 @@ DaisySP/
 | :--- | :--- | :--- |
 | **License** | **MIT License** | **GNU LGPL v2.1** |
 | **Inclusion** | Included by default via `#include "daisysp.h"` | Enabled via `-DUSE_DAISYSP_LGPL` and `#include "daisysp-lgpl.h"` |
-| **Algorithm Provenance**| Original Electro-Smith code, Andrew Simper SVF, Émilie Gillet / Mutable Instruments (Plaits, Rings, Stmlib) ports | Csound, Soundpipe (Paul Batchelor), Faust (Julius Smith, GRAME), Sean Costello reverb |
+| **Algorithm Provenance** | Original Electro-Smith code, Andrew Simper SVF, Émilie Gillet / Mutable Instruments (Plaits, Rings, Stmlib) ports | Csound, Soundpipe (Paul Batchelor), Faust (Julius Smith, GRAME), Sean Costello reverb |
 | **Commercial Usage** | Permissive in proprietary closed-source firmware and binaries without special relinking requirements. | Commercial products must comply with LGPL: end users must be able to re-link the application with a modified `libdaisysp-lgpl.a`. |
 | **Distribution Tool** | Standard compilation (`libdaisysp.a`). | Electro-Smith provides `DaisySP-LGPL/distribution/gather_lgpl.sh` to package relocatable object files for compliance. |
 
@@ -139,6 +141,7 @@ Modules fall into two categories regarding return values:
    Single-output processors (`Oscillator`, `LadderFilter`, `Overdrive`, `PitchShifter`, `Adsr`) return the newly evaluated sample directly from `Process()`.
 2. **State-Query Pattern (`void Process(float in)`):**
    Multi-output filters like `Svf` (State Variable Filter) and `Soap` (Second Order All-Pass) return `void` from `Process(in)`. The user then extracts the desired filter topology via dedicated getter methods:
+
    ```cpp
    filter.Process(input);
    float lp = filter.Low();
@@ -196,8 +199,11 @@ flowchart LR
 ```
 
 #### Embedded Memory Hazard: DTCM vs. SDRAM
+
 On the STM32H750 (Daisy Seed), internal data RAM is divided into fast **DTCM** (128 KB, zero wait states, **no DMA**) and **AXI SRAM** (512 KB). High-footprint classes **must not** be placed on the stack or in DTCM:
+
 * `ReverbSc`: Allocates an internal array of **98,936 floats** (~395 KB). Instantiating `ReverbSc` as a local stack variable or inside DTCM will immediately overflow memory and hard-fault the CPU. It should be declared in static global memory or mapped to external SDRAM using `DSY_SDRAM_BSS`:
+
   ```cpp
   // Recommended placement for memory-heavy modules on Daisy Seed:
   static ReverbSc DSY_SDRAM_BSS reverb;
@@ -281,7 +287,7 @@ flowchart LR
 | **`OnePole`** | `Filters/onepole.h` | MIT | Ultra-efficient 6 dB/octave first-order filter. Supports lowpass and highpass modes (`SetMode`) and raw coefficient control (`SetFilterFactor`). |
 | **`FIR`** | `Filters/fir.h` | MIT | Finite Impulse Response filter template: `FIR<max_size, max_block>`. When compiled for ARM with `-DUSE_ARM_DSP`, automatically switches to `FIRFilterImplARM` using CMSIS-DSP SIMD hardware acceleration. Falls back to portable generic C++ (`FIRFilterImplGeneric`) on desktop/native targets. |
 | **`Soap`** | `Filters/soap.h` | MIT | Tom Erbe's Second Order All-Pass filter with configurable center frequency and bandwidth. Outputs bandpass (`Bandpass()`) and bandreject/notch (`Bandreject()`). |
-| **`MoogLadder`**| `daisysp-lgpl.h` / `moogladder.h` | LGPL | Classic Csound 4-pole Moog ladder emulation. Rich resonance with vintage coloration. |
+| **`MoogLadder`** | `daisysp-lgpl.h` / `moogladder.h` | LGPL | Classic Csound 4-pole Moog ladder emulation. Rich resonance with vintage coloration. |
 | **`Biquad`** | `daisysp-lgpl.h` / `biquad.h` | LGPL | Standard 2nd-order Direct Form I/II biquad IIR filter with parametric coefficient calculation. |
 | **`Tone`** & **`ATone`** | `daisysp-lgpl.h` | LGPL | Classic Csound recursive 1-pole Lowpass (`Tone`) and Highpass (`ATone`) filters. |
 | **`Allpass`** | `daisysp-lgpl.h` / `allpass.h` | LGPL | First-order allpass delay filter with user-supplied buffer memory. |
@@ -319,7 +325,7 @@ flowchart TD
 | **`Chorus`** | `Effects/chorus.h` | MIT | Stereo chorus with independent LFO depths (`SetLfoDepth`), LFO frequencies (`SetLfoFreq`), stereo panning (`SetPan`), and delay offset (`SetDelayMs`). Returns left channel from `Process(in)` and exposes `GetLeft()` / `GetRight()`. |
 | **`Flanger`** | `Effects/flanger.h` | MIT | Comb-filtering flanger with feedback modulation (`SetFeedback`), modulation depth (`SetLfoDepth`), LFO rate (`SetLfoFreq`), and dry/wet mix. |
 | **`Phaser`** | `Effects/phaser.h` | MIT | Multi-stage allpass phaser with internal LFO, selectable poles, and feedback control (`SetFeedback`, `SetLfoDepth`, `SetLfoFreq`). |
-| **`PitchShifter`**| `Effects/pitchshifter.h` | MIT | Real-time dual-delay-line granular pitch shifter. Transposes musical pitch smoothly in semitones (`SetTransposition`), with random window slew controls (`SetFun`) and buffer sizing (`SetDelSize`). **Note:** Allocates internal 16K sample buffers (~128 KB); allocate statically. |
+| **`PitchShifter`** | `Effects/pitchshifter.h` | MIT | Real-time dual-delay-line granular pitch shifter. Transposes musical pitch smoothly in semitones (`SetTransposition`), with random window slew controls (`SetFun`) and buffer sizing (`SetDelSize`). **Note:** Allocates internal 16K sample buffers (~128 KB); allocate statically. |
 | **`Overdrive`** | `Effects/overdrive.h` | MIT | Non-linear saturation and soft-clipping distortion. Drive parameter ranges from clean ($0.0$) to intense saturated clipping ($1.0$). |
 | **`Wavefolder`** | `Effects/wavefolder.h` | MIT | West Coast / Buchla-style wavefolding distortion. Folds audio peaks back inward when exceeding threshold, multiplying harmonic content (`SetGain`, `SetOffset`). |
 | **`Decimator`** | `Effects/decimator.h` | MIT | Dual-axis lo-fi digital degradation: bit-depth truncation ($1$ to $32$ bits via `SetBitcrushFactor`) and downsampling ($0.0$ to $1.0$ via `SetDownsampleFactor`). |
@@ -404,7 +410,7 @@ flowchart LR
 | :--- | :--- | :--- | :--- |
 | **`Limiter`** | `Dynamics/limiter.h` | MIT | Lookahead peak limiter ported from Mutable Instruments `stmlib`. Designed to prevent harsh clipping on master bus outputs. Operates in-place on audio blocks: `ProcessBlock(float *in, size_t size, float pre_gain)`. |
 | **`CrossFade`** | `Dynamics/crossfade.h` | MIT | Dual-channel audio crossfader ported from Soundpipe. Supports four distinct curves: `CROSSFADE_LIN` (linear), `CROSSFADE_CPOW` (constant power, recommended for audio signals to maintain perceived loudness), `CROSSFADE_LOG` (logarithmic), and `CROSSFADE_EXP` (exponential). |
-| **`Compressor`**| `daisysp-lgpl.h` / `compressor.h` | LGPL | Dynamic range compressor from Faust/Soundpipe. Features adjustable threshold, ratio, attack time, release time, makeup gain, and **sidechain key input** (`Process(in, key)`). |
+| **`Compressor`** | `daisysp-lgpl.h` / `compressor.h` | LGPL | Dynamic range compressor from Faust/Soundpipe. Features adjustable threshold, ratio, attack time, release time, makeup gain, and **sidechain key input** (`Process(in, key)`). |
 | **`Balance`** | `daisysp-lgpl.h` / `balance.h` | LGPL | RMS signal level comparator and tracker from Csound. Dynamically scales an audio signal's amplitude to match the perceived loudness energy of a comparator signal. |
 
 ---
@@ -446,6 +452,7 @@ stateDiagram-v2
 ### 4.10 Utilities & The DSP Math Engine (`Utility/`)
 
 #### The Master DSP Math Library (`Utility/dsp.h`)
+
 The `dsp.h` header contains accelerated mathematical functions, lookup constants, and anti-aliasing utilities:
 
 ```cpp
@@ -488,6 +495,7 @@ float limit = SoftLimit(sample);  // Cubic polynomial limiter
 ## 5. Practical Implementation Recipes
 
 ### Recipe 1: Monophonic Subtractive Synth Voice
+
 *Components: `Oscillator`, `LadderFilter`, `Adsr`, and `Overdrive`.*
 
 ```cpp
@@ -567,6 +575,7 @@ int main(void)
 ---
 
 ### Recipe 2: Ambient Stereo Guitar Multi-Effects Processor
+
 *Components: `Overdrive`, `Chorus`, `DelayLine`, and `ReverbSc`.*
 
 ```cpp
@@ -633,6 +642,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
 ---
 
 ### Recipe 3: Algorithmic Techno Drum Sequencer
+
 *Components: `Metro`, `Maytrig`, `AnalogBassDrum`, `AnalogSnareDrum`, `HiHat`.*
 
 ```cpp
@@ -736,6 +746,7 @@ include $(LIBDAISY_DIR)/core/Makefile
 ```
 
 When `USE_DAISYSP_LGPL = 1` is declared:
+
 1. `-I$(DAISYSP_DIR)/DaisySP-LGPL/Source` is added to your include path.
 2. `-DUSE_DAISYSP_LGPL` is defined.
 3. `-L$(DAISYSP_DIR)/DaisySP-LGPL/build -ldaisysp-lgpl` is added to the linker flags.
@@ -764,13 +775,17 @@ target_link_libraries(MyPlugin PRIVATE DaisySP)
 ### 6.3 Compiler Flags & Performance Best Practices
 
 To extract peak real-time performance on ARM Cortex-M7 (STM32H750):
+
 * **Optimization:** Always compile release firmware with `-O3` or `-Ofast`.
 * **Hardware FPU:** Ensure hardware floating point is active:
+
   ```bash
   -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard
   ```
+
 * **Fast Math:** Pass `-ffast-math` to enable hardware reciprocal approximation and vectorized multiply-accumulate instructions.
 * **Denormal Flush-to-Zero:** On ARM Cortex-M7, denormal floating point numbers (underflows below $\approx 10^{-38}$) cause multicycle CPU pipeline stalls. In audio callbacks processing recursive IIR filters or reverbs, enable automatic flush-to-zero in the FPU Control Register (`FPSCR`):
+
   ```cpp
   // Enable Flush-to-Zero (FTZ) and Default-NaN (DN) on ARM Cortex-M7 FPU
   SCB->CPACR |= (0xF << 20); // Ensure FPU is powered
@@ -784,7 +799,7 @@ To extract peak real-time performance on ARM Cortex-M7 (STM32H750):
 | Module Name | Master Header Category | License | Typical Application | Key Methods |
 | :--- | :--- | :--- | :--- | :--- |
 | **`Oscillator`** | `Synthesis/oscillator.h` | MIT | Subtractive synthesis | `Init`, `SetFreq`, `SetWaveform`, `SetPw`, `Process` |
-| **`VariableShapeOscillator`** | `Synthesis/variableshapeosc.h`| MIT | Wavefolding morphing osc | `Init`, `SetFreq`, `SetWaveshape`, `SetPW`, `Process` |
+| **`VariableShapeOscillator`** | `Synthesis/variableshapeosc.h` | MIT | Wavefolding morphing osc | `Init`, `SetFreq`, `SetWaveshape`, `SetPW`, `Process` |
 | **`Fm2`** | `Synthesis/fm2.h` | MIT | 2-Operator FM synthesis | `Init`, `SetFrequency`, `SetRatio`, `SetIndex`, `Process` |
 | **`Svf`** | `Filters/svf.h` | MIT | State Variable Filter | `Init`, `SetFreq`, `SetRes`, `SetDrive`, `Process`, `Low`, `High`, `Band` |
 | **`LadderFilter`** | `Filters/ladder.h` | MIT | 4-pole Moog ladder | `Init`, `SetFreq`, `SetRes`, `SetFilterMode`, `Process`, `ProcessBlock` |
@@ -796,17 +811,17 @@ To extract peak real-time performance on ARM Cortex-M7 (STM32H750):
 | **`Wavefolder`** | `Effects/wavefolder.h` | MIT | Buchla wavefolder | `Init`, `SetGain`, `SetOffset`, `Process` |
 | **`Decimator`** | `Effects/decimator.h` | MIT | Lo-fi bitcrush/downsample | `Init`, `SetBitcrushFactor`, `SetDownsampleFactor`, `Process` |
 | **`AnalogBassDrum`** | `Drums/analogbassdrum.h` | MIT | 808-style kick drum | `Init`, `SetFreq`, `SetTone`, `SetDecay`, `Trig`, `Process` |
-| **`AnalogSnareDrum`**| `Drums/analogsnaredrum.h`| MIT | 808-style snare drum | `Init`, `SetFreq`, `SetSnappy`, `SetTone`, `Trig`, `Process` |
+| **`AnalogSnareDrum`** | `Drums/analogsnaredrum.h` | MIT | 808-style snare drum | `Init`, `SetFreq`, `SetSnappy`, `SetTone`, `Trig`, `Process` |
 | **`HiHat`** | `Drums/hihat.h` | MIT | Metallic 808 hats | `Init`, `SetFreq`, `SetTone`, `SetDecay`, `Process` |
-| **`StringVoice`** | `PhysicalModeling/stringvoice.h`| MIT | Plucked string acoustic voice| `Init`, `SetFreq`, `SetStructure`, `SetBrightness`, `Trig`, `Process` |
+| **`StringVoice`** | `PhysicalModeling/stringvoice.h` | MIT | Plucked string acoustic voice | `Init`, `SetFreq`, `SetStructure`, `SetBrightness`, `Trig`, `Process` |
 | **`ModalVoice`** | `PhysicalModeling/modalvoice.h` | MIT | Bell/plate physical model | `Init`, `SetFreq`, `SetStructure`, `SetDamping`, `Trig`, `Process` |
 | **`GranularPlayer`** | `Sampling/granularplayer.h` | MIT | Time-stretch & pitch shift | `Init`, `Process(speed, transposition, grain_size)` |
 | **`Limiter`** | `Dynamics/limiter.h` | MIT | Lookahead peak limiting | `Init`, `ProcessBlock(in, size, pre_gain)` |
 | **`CrossFade`** | `Dynamics/crossfade.h` | MIT | Linear & equal power fades | `Init(curve)`, `Process(in1, in2)` |
 | **`Adsr`** | `Control/adsr.h` | MIT | ADSR envelope generator | `Init(sr, blockSize)`, `SetAttackTime`, `Process(gate)` |
-| **`DelayLine`** | `Utility/delayline.h` | MIT | Delay with Hermite interpolation| `Init`, `Write`, `Read`, `ReadHermite` |
+| **`DelayLine`** | `Utility/delayline.h` | MIT | Delay with Hermite interpolation | `Init`, `Write`, `Read`, `ReadHermite` |
 | **`Looper`** | `Utility/looper.h` | MIT | Multi-mode phrase looper | `Init(mem, size)`, `Process`, `SetMode`, `TrigRecord` |
 | **`Metro`** | `Utility/metro.h` | MIT | Metronome clock ticks | `Init`, `SetFreq`, `Process` |
-| **`ReverbSc`** | `daisysp-lgpl.h` / `reverbsc.h`| LGPL | 8-delay stereo algorithmic reverb| `Init`, `SetFeedback`, `SetLpFreq`, `Process(in1, in2, *out1, *out2)` |
-| **`Compressor`** | `daisysp-lgpl.h` / `compressor.h`| LGPL | Dynamic range compressor | `Init`, `Process(in)`, `Process(in, key)` |
+| **`ReverbSc`** | `daisysp-lgpl.h` / `reverbsc.h` | LGPL | 8-delay stereo algorithmic reverb | `Init`, `SetFeedback`, `SetLpFreq`, `Process(in1, in2, *out1, *out2)` |
+| **`Compressor`** | `daisysp-lgpl.h` / `compressor.h` | LGPL | Dynamic range compressor | `Init`, `Process(in)`, `Process(in, key)` |
 | **`BlOsc`** | `daisysp-lgpl.h` / `blosc.h` | LGPL | Band-limited osc (Faust) | `Init`, `SetFreq`, `SetAmp`, `Process` |

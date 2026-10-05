@@ -6,7 +6,7 @@
 
 ## 1. Executive Summary & Ecosystem Overview
 
-**`libDaisy`** is the official C++ Hardware Abstraction Layer (HAL) and Board Support Package (BSP) ecosystem developed by **Electro-Smith** for the **Daisy embedded audio platform**. 
+**`libDaisy`** is the official C++ Hardware Abstraction Layer (HAL) and Board Support Package (BSP) ecosystem developed by **Electro-Smith** for the **Daisy embedded audio platform**.
 
 At its core, `libDaisy` transforms high-performance ARM Cortex-M7 microcontrollers into accessible, real-time audio development platforms. It abstracts low-level hardware configuration—system clocks, nested interrupt vector controllers, direct memory access (DMA) streams, cache maintenance, peripheral registers, and external memory controllers—into an intuitive, object-oriented modern C++ API tailored for ultra-low-latency digital signal processing (DSP) and musical instrument design.
 
@@ -21,7 +21,7 @@ At its core, `libDaisy` transforms high-performance ARM Cortex-M7 microcontrolle
 | **Internal Memory** | **128 KB** User Flash, **1 MB** internal SRAM (split into ITCM, DTCM, AXI SRAM, SRAM1–4) |
 | **External Memory** | **64 MB** SDRAM (AS4C32M16SB, 32M x 16-bit high-speed SDRAM @ ~100–120 MHz FMC bus) |
 | **Non-Volatile Storage** | **8 MB** Quad-SPI (QSPI) NOR Flash (IS25LP064A / IS25LP080D) |
-| **On-board Audio Codec**| 24-bit stereo audio running up to 96 kHz:<br>• **Rev4:** Asahi Kasei AK4556<br>• **Rev5 / Seed 1.1:** Cirrus Logic / Wolfson WM8731<br>• **Rev7 / Seed 1.2 & Seed 2 DFM:** Burr-Brown / TI PCM3060<br>• **Seed 3:** Texas Instruments TAC5242 |
+| **On-board Audio Codec** | 24-bit stereo audio running up to 96 kHz:<br>• **Rev4:** Asahi Kasei AK4556<br>• **Rev5 / Seed 1.1:** Cirrus Logic / Wolfson WM8731<br>• **Rev7 / Seed 1.2 & Seed 2 DFM:** Burr-Brown / TI PCM3060<br>• **Seed 3:** Texas Instruments TAC5242 |
 | **Physical I/O** | 32 GPIO pins (configurable for ADC, DAC, PWM, I2C, SPI, UART, SAI), USB-C / micro-USB, built-in LED, test point |
 
 ### 1.2 Relationship to the Surrounding Ecosystem
@@ -97,7 +97,8 @@ libDaisy/
 The audio pipeline is the cornerstone of `libDaisy`. It provides non-blocking, interrupt-driven, double-buffered audio streaming via the STM32's Serial Audio Interface (SAI) and DMA.
 
 #### Audio Processing Paradigm
-Audio data is processed in **blocks** (buffers) rather than single samples to minimize DMA transfer overhead and interrupt jitter. 
+
+Audio data is processed in **blocks** (buffers) rather than single samples to minimize DMA transfer overhead and interrupt jitter.
 
 * **Sample Rates:** Configurable to 8 kHz, 16 kHz, 32 kHz, 44.1 kHz, 48 kHz, or 96 kHz.
 * **Block Sizes:** Configurable from 1 sample up to 256 samples (default is 48 samples, yielding 1 ms latency at 48 kHz).
@@ -125,6 +126,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
 ### 3.2 Peripheral Drivers (`per/`)
 
 All peripheral drivers in `libDaisy` follow a consistent initialization pattern:
+
 1. Define a `Peripheral::Config` struct.
 2. Initialize or override specific parameters (pins, baudrate, speed, mode).
 3. Instantiate the driver class and call `.Init(config)`.
@@ -224,10 +226,10 @@ The `hid/` directory abstracts raw analog voltages and noisy digital pins into m
 | **`DaisySeed`** | Daisy Seed SOM | SDRAM, QSPI Flash, Audio Codec, USB, On-board LED, Test Point, Pinout namespace. |
 | **`DaisyPod`** | Pod Prototyping Board | Stereo Audio, 2 Potentiometers, 2 Pushbuttons, 2 RGB LEDs, Rotary Encoder, 3.5mm TRS MIDI. |
 | **`DaisyPatch`** | Eurorack Modular Synth | 4 Audio Ins, 4 Audio Outs, 128x64 OLED Display, 4 CV Ins, 2 CV Outs, 2 Gate Ins, 2 Gate Outs, Encoder, MIDI. |
-| **`DaisyPatchSM`**| Eurorack Submodule | Ultra-compact Eurorack core: dual audio, -5V to +5V CV inputs/outputs, gates, hardware control bus. |
-| **`DaisyPetal`**| Guitar Stompbox | Stereo Audio, 4 Footswitches, 4 Toggle Switches, 6 Potentiometers, 8 Status LEDs, Expression Pedal input, SD Card slot. |
+| **`DaisyPatchSM`** | Eurorack Submodule | Ultra-compact Eurorack core: dual audio, -5V to +5V CV inputs/outputs, gates, hardware control bus. |
+| **`DaisyPetal`** | Guitar Stompbox | Stereo Audio, 4 Footswitches, 4 Toggle Switches, 6 Potentiometers, 8 Status LEDs, Expression Pedal input, SD Card slot. |
 | **`DaisyField`** | Performance Controller | 2 Audio Ins/Outs, 8 Knobs, 2 CV Ins, 2 CV Outs, 16-key Capacitive Touch Surface (`MPR121`), OLED Display, MIDI. |
-| **`DaisyVersio`**| Noise Engineering Versio| DSP Eurorack module platform: stereo I/O, 7 Knobs, 2 Toggles, Tap button, 4 RGB LEDs. |
+| **`DaisyVersio`** | Noise Engineering Versio | DSP Eurorack module platform: stereo I/O, 7 Knobs, 2 Toggles, Tap button, 4 RGB LEDs. |
 | **`DaisyLegio`** | Noise Engineering Legio | Compact 6HP Eurorack platform: stereo I/O, 5 Knobs, 2 Toggles, Dual RGB LEDs. |
 
 ---
@@ -252,40 +254,51 @@ The STM32H750IB utilizes a sophisticated multi-bus, multi-domain memory layout. 
 ### 5.1 Critical Architectural Rules & Pitfalls
 
 #### 1. DMA Buffers & Cache Coherency Hazard (`DMA_BUFFER_MEM_SECTION`)
+
 The Cortex-M7 features a 16 KB L1 Data Cache (D-Cache). Peripheral DMA engines (ADC, SAI Audio, SPI, I2C) write directly to physical SRAM without updating the CPU cache. If a DMA buffer is placed in standard cached memory, the CPU will read stale data from cache, or cache write-backs will overwrite incoming DMA data.
 > [!IMPORTANT]
 > `libDaisy` configures the MPU such that **SRAM1 (`0x30000000`) is non-cacheable**. Any buffer passed to a DMA peripheral **must** be decorated with the macro:
+>
 > ```cpp
 > uint8_t DMA_BUFFER_MEM_SECTION my_dma_buffer[1024];
 > ```
 
 #### 2. DTCM RAM Limitations (`DTCM_MEM_SECTION`)
+
 DTCM (Data Tightly Coupled Memory) operates at 480 MHz with zero wait states, making it ideal for DSP delay lines and filter states:
+
 ```cpp
 float DTCM_MEM_SECTION filter_coefficients[1024];
 ```
+
 > [!WARNING]
 > The DTCM bus has no direct connection to the D2 domain DMA bus matrix. **Never assign ADC, SAI, or SPI DMA buffers to DTCM**, or the DMA controller will trigger a HardFault.
 
 #### 3. External SDRAM Usage (`SDRAM_MEM_SECTION`)
+
 The 64 MB SDRAM chip is essential for long delay lines, loopers, and large sample playback:
+
 ```cpp
 float DSY_SDRAM_BSS big_delay_buffer[48000 * 60]; // 1 minute of stereo audio
 ```
+
 > [!CAUTION]
+>
 > * SDRAM initialization occurs during `hw.Init()` inside `main()`. **Never create C++ classes with non-trivial constructors in SDRAM as global variables**, because C++ static constructors execute before `main()`, which will cause a crash when accessing uninitialized SDRAM.
 > * Always place global SDRAM objects in the BSS section using `DSY_SDRAM_BSS`.
 
 #### 4. Blocking Code Inside the Audio Callback
+
 The audio callback runs inside an interrupt service routine (ISR) at the highest software priority.
 > [!CRITICAL]
 > **Never perform blocking operations inside `AudioCallback`**. This includes:
+>
 > * Standard I2C or SPI transactions (`i2c.TransmitBlocking()`)
 > * OLED display updating (`oled.Update()`)
 > * Flash writing or sector erasing
 > * SD card FatFs file reads/writes
 > * `System::Delay()` or `DelayMs()`
-> 
+>
 > Blocking inside the audio callback starves the SAI DMA FIFO and causes audible glitches, clicks, or watchdog resets. Controls, displays, and file I/O must always be handled in the non-real-time main loop (`while(1)`).
 
 ---
@@ -302,22 +315,27 @@ In your project `Makefile`, you define the execution target:
 | :--- | :--- | :--- | :--- | :--- |
 | **`BOOT_NONE`** | Internal Flash (`0x08000000`) | 128 KB | 480 MHz (Fast) | `STM32H750IB_flash.lds` |
 | **`BOOT_SRAM`** | Internal AXI SRAM (`0x24000000`) | ~480 KB | 480 MHz (Fastest) | `STM32H750IB_sram.lds` |
-| **`BOOT_QSPI`** | External QSPI Flash (`0x90040000`)| ~8 MB | Slower (Cache dependent) | `STM32H750IB_qspi.lds` |
+| **`BOOT_QSPI`** | External QSPI Flash (`0x90040000`) | ~8 MB | Slower (Cache dependent) | `STM32H750IB_qspi.lds` |
 
 * **How `BOOT_SRAM` Works:** The Daisy Bootloader resides permanently in internal flash. Upon startup, it reads your application binary stored in external QSPI flash (`0x90040000`), copies it into internal AXI SRAM (`0x24000000`), verifies the checksum, and jumps to its entry vector. This provides maximum execution speed for applications up to ~480 KB.
 
 ### 6.2 Flashing Commands
 
 * **Flashing Applications via USB DFU (`dfu-util`):**
+
   ```bash
   make clean && make
   make program-dfu
   ```
+
 * **Flashing the Daisy Bootloader to internal flash:**
+
   ```bash
   make program-boot
   ```
+
 * **Hardware Debugging (SWD/JTAG with OpenOCD + ST-Link):**
+
   ```bash
   make openocd       # Starts OpenOCD GDB server on port 3333
   make debug         # Builds with -g -ggdb and launches arm-none-eabi-gdb
