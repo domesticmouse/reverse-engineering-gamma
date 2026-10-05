@@ -103,6 +103,7 @@ All 8 user analog controls and the auxiliary channel route into the STM32H750's 
 ### A. 4 Rotary Potentiometers (Knobs Across Top Panel)
 
 Physical order from left to right:
+
 1. **Knob 0 (Chord Vol):** `seed::D18` (`PA7` / `ADC1_INP7` / `A3`)
 2. **Knob 1 (Chord Filter):** `seed::D17` (`PB1` / `ADC1_INP5` / `A2`)
 3. **Knob 2 (Notes Vol):** `seed::D19` (`PA6` / `ADC1_INP3` / `A4`)
@@ -141,6 +142,7 @@ Physical order from left to right:
 The Gamma synthesizer has 14 tactile keys arranged into two distinct physical grids: 7 Note keys on the left and 7 Chord keys on the right.
 
 Each switch connects directly to a dedicated MCU GPIO with internal pull-up (`INPUT_PULLUP`).
+
 * **Unpressed:** Pin reads `HIGH` (`1`)
 * **Pressed:** Pin reads `LOW` (`0`)
 
@@ -183,6 +185,7 @@ Each switch connects directly to a dedicated MCU GPIO with internal pull-up (`IN
 ## 6. Rotary Encoder & Integrated Push Switch
 
 The rotary dial on the front panel is connected via a 4-wire harness:
+
 * **GND:** Shared ground wire
 * **Phase A:** `seed::D15` (`PC0`, input pull-up)
 * **Phase B:** `seed::D16` (`PA3`, input pull-up)
@@ -227,6 +230,7 @@ The rotary dial on the front panel is connected via a 4-wire harness:
   * Because the main loop freezes while the audio DMA interrupt keeps running, **the synth locks up with a note stuck playing continuously**!
 * **Deadlock-Immune Non-Blocking Logger Pattern:**
   Replace `Logger<LOGGER_EXTERNAL>` with a custom timeout-guarded logger using `hw.usb_handle.TransmitExternal()`:
+
   ```cpp
   struct UsbLog
   {
@@ -286,8 +290,9 @@ The rotary dial on the front panel is connected via a 4-wire harness:
       }
   };
   ```
+
 * **Never print from the USB receive callback:** `UsbRxCallback` runs in the USB interrupt. Queue received bytes into a ring buffer and process commands in the main loop (see `firmware/phase5_audio/main.cpp`). Support the `'b'` command for automated flashing by calling `System::ResetToBootloader(System::DAISY_INFINITE_TIMEOUT)`. Do **not** call it with no argument: that defaults to the STM32 ROM bootloader, which cannot program the QSPI app slot at `0x90040000`.
-* **MIDI Implementation:** 
+* **MIDI Implementation:**
   * The Gamma Mini Synth has **no hardware 3.5mm TRS MIDI port**. All MIDI communication is handled over the USB-C connector as a class-compliant USB MIDI device.
   * In libDaisy, use `daisy::MidiUsbHandler` with `midi_cfg.transport_config.periph = daisy::MidiUsbTransport::Config::EXTERNAL`. No discrete GPIO configuration is required; libDaisy configures `PB14`/`PB15` for `USB_OTG_HS`.
 * **VBUS sensing:** Stock libDaisy already sets `hpcd_USB_OTG_HS.Init.vbus_sensing_enable = DISABLE`, so the external port works with **unmodified** libDaisy. (An earlier local patch disabling VBUS sensing on `hpcd_USB_OTG_FS` only affected the unconnected internal port and has been reverted.)

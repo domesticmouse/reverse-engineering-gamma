@@ -24,8 +24,8 @@ This skill provides a comprehensive operational guide and architectural referenc
 | **MCU Core** | ARM Cortex-M7 @ 480 MHz with FPU (double/single precision) & DSP extensions | CMSIS-DSP, CMSIS Core, LL / HAL drivers |
 | **Internal Flash** | 128 KB User Flash (`0x08000000`) | Base bootloader location (`APP_TYPE = BOOT_NONE`) |
 | **Internal RAM** | 1 MB total: AXI SRAM (512 KB), DTCM (128 KB), SRAM1–3 (288 KB), SRAM4 (64 KB) | Fast DSP state (`DTCM`), DMA buffers (`SRAM1`) |
-| **External SDRAM**| 64 MB 32-bit SDRAM (AS4C32M16SB) via FMC bus @ ~100–120 MHz | Large audio buffers / delay lines (`DSY_SDRAM_BSS`) |
-| **External Flash**| 8 MB QSPI NOR Flash (IS25LP064A) via Quad-SPI | Daisy Bootloader app storage (`APP_TYPE = BOOT_SRAM`) & presets |
+| **External SDRAM** | 64 MB 32-bit SDRAM (AS4C32M16SB) via FMC bus @ ~100–120 MHz | Large audio buffers / delay lines (`DSY_SDRAM_BSS`) |
+| **External Flash** | 8 MB QSPI NOR Flash (IS25LP064A) via Quad-SPI | Daisy Bootloader app storage (`APP_TYPE = BOOT_SRAM`) & presets |
 | **Audio Codec** | 24-bit stereo up to 96 kHz (AK4556, WM8731, PCM3060, TAC5242) | Interrupt double-buffered DMA via SAI1 |
 | **USB** | USB 2.0 Full-Speed (12 Mbps) or High-Speed with external ULPI | USB CDC (Serial), USB MIDI, USB Audio, USB Host |
 
@@ -96,7 +96,7 @@ int main(void)
 | **ITCM RAM** | `0x00000000` | 64 KB | `.itcmram` | Zero-wait-state instruction RAM. |
 | **DTCM RAM** | `0x20000000` | 128 KB | `DTCM_MEM_SECTION` | 480 MHz zero-wait data RAM for DSP state. **No DMA access.** |
 | **AXI SRAM** | `0x24000000` | 512 KB | Standard RAM (`.bss`, `.data`) | Primary application RAM (`BOOT_SRAM`). Cached. |
-| **SRAM1 (D2)**| `0x30000000`| 128 KB | `DMA_BUFFER_MEM_SECTION` | **Non-cached.** Mandatory for all ADC, SAI, SPI, I2C DMA buffers. |
+| **SRAM1 (D2)** | `0x30000000` | 128 KB | `DMA_BUFFER_MEM_SECTION` | **Non-cached.** Mandatory for all ADC, SAI, SPI, I2C DMA buffers. |
 | **SDRAM** | `0xC0000000` | 64 MB | `DSY_SDRAM_BSS` | External delay buffers. No C++ static constructors before `hw.Init()`. |
 | **QSPI Flash** | `0x90000000` | 8 MB | `BOOT_QSPI` / Memory-mapped | Non-volatile code storage & presets (`PersistentStorage`). |
 
@@ -140,6 +140,7 @@ make program-dfu
 ```
 
 To install the Daisy Bootloader onto a fresh board:
+
 ```bash
 make program-boot
 ```

@@ -48,18 +48,24 @@ The Gamma Mini Synth routes the Daisy Seed 2 DFM's Full-Speed USB peripheral to 
 When integrating USB CDC serial on real-time synthesis firmware running SAI audio interrupts (e.g. 48 kHz, block size 48), standard blocking patterns can crash or stall the firmware.
 
 ### Hazard 1: libDaisy `Logger<LOGGER_EXTERNAL>` Infinite Spinloop
+
 libDaisy's built-in `daisy::Logger<LOGGER_EXTERNAL>` uses `TransmitSync()`. If a host terminal is disconnected, closed, or stops reading the USB CDC IN endpoint:
+
 * `TransmitSync()` enters an infinite `while(1)` waiting for the USB TX-complete flag.
 * The main loop freezes indefinitely.
 * User controls (knobs, keys, OLED) lock up, and while audio interrupts may continue in hardware, no control updates or state changes can occur.
 
 ### Hazard 2: USB Interrupt Deadlock via `UsbRxCallback`
+
 When the host transmits a byte to the synth, libDaisy invokes the registered `UsbRxCallback` in the **USB ISR context**:
+
 * Calling any blocking log function (like `hw.PrintLine` or `TransmitSync`) from within `UsbRxCallback` causes an immediate, permanent deadlock: the TX-complete interrupt cannot fire while still servicing the RX interrupt.
 * **Rule**: The USB RX callback must **never** format or transmit data. It must only append incoming bytes into a lock-free ring buffer for consumption by the main thread.
 
 ### The Solution: Non-Blocking Multi-Buffer Pool with Timeout & Backoff
+
 The [`gamma_usb.h`](resources/gamma_usb.h) driver resolves this with:
+
 1. **Multi-Buffer TX Pool**: Rotates across 4 static buffers to avoid clobbering in-flight packets.
 2. **500 µs Maximum Wait**: If the host is not actively polling, TX drops after 500 µs rather than stalling the frame loop.
 3. **200 ms Fast-Fail Backoff**: If a transmission times out, subsequent print calls try once without waiting for 200 ms, preventing delay accumulation when no terminal is connected.
@@ -70,6 +76,7 @@ The [`gamma_usb.h`](resources/gamma_usb.h) driver resolves this with:
 ## 3. Firmware Integration & Sample Code
 
 ### Drop-In Header
+
 Copy [`gamma_usb.h`](resources/gamma_usb.h) into your firmware directory:
 
 ```cpp
@@ -160,33 +167,44 @@ It requires **no external packages** (uses POSIX `termios`/`select` on macOS and
 ### Common Commands
 
 #### 1. Automated Bidirectional Self-Test
+
 Runs a diagnostic verification test sending commands, checking responses, and measuring round-trip integrity:
+
 ```bash
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --test
 ```
 
 #### 2. Send Specific Commands
+
 Send a single ASCII command (e.g. `'h'` for help menu, `'w'` for waveform cycle):
+
 ```bash
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --cmd "h"
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --cmd "w"
 ```
 
 #### 3. Monitor Serial Stream
+
 Listen to real-time firmware logs, diagnostic telemetry, and event messages:
+
 ```bash
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --monitor
 ```
 
 #### 4. Interactive Terminal Mode
+
 Provides a raw bidirectional serial terminal where keystrokes are transmitted instantly and synth responses are rendered live:
+
 ```bash
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --interactive
 ```
+
 *(Press `Ctrl+C` or `Ctrl+]` to exit).*
 
 #### 5. Remote DFU Bootloader Reboot
+
 Instructs the firmware over USB to reboot into the **Daisy** DFU bootloader (not the STM32 ROM bootloader) for immediate flashing with `dfu-util` or `flash_firmware.py`:
+
 ```bash
 python3 .agents/skills/gamma-usb-connectivity/scripts/gamma_usb.py --bootloader
 ```

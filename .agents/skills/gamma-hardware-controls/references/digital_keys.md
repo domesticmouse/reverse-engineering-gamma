@@ -7,9 +7,11 @@ The Gamma synthesizer has 14 tactile keypad switches arranged into two distinct 
 ## 1. Hardware Pinout & Physical Layout
 
 Each switch is connected to an MCU GPIO pin configured with an internal pull-up resistor (`INPUT_PULLUP`).
+
 * **Active-Low:** `1` (HIGH) = Unpressed; `0` (LOW) = Pressed.
 
 ### Left Keypad: 7 Note Keys (N1–N7)
+
 ```text
   [ N1 ]   [ N2 ]   [ N3 ]   [ N4 ]     <-- Top Row
   [ N5 ]   [ N6 ]   [ N7 ]              <-- Bottom Row
@@ -26,6 +28,7 @@ Each switch is connected to an MCU GPIO pin configured with an internal pull-up 
 | **N7** | Bottom Row, Col 3 | `seed::D7` | `PG10` | Active-Low |
 
 ### Right Keypad: 7 Chord Keys (C1–C7)
+
 ```text
   [ C1 ]   [ C2 ]   [ C3 ]   [ C4 ]     <-- Top Row
   [ C5 ]   [ C6 ]   [ C7 ]              <-- Bottom Row

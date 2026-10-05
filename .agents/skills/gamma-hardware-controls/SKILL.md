@@ -13,6 +13,7 @@ description: >-
 This skill documents how to interface with all front-panel user interface controls on the **this.is.NOISE Gamma Mini Synth**, powered by an embedded **Electro-Smith Daisy Seed 2 DFM** (ARM Cortex-M7 @ 480 MHz, STM32H750IBK6).
 
 It synthesizes findings, drivers, and timing architectures validated in:
+
 * [`firmware/phase3_adc`](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/firmware/phase3_adc) (Analog Potentiometers, Joysticks & OLED Display)
 * [`firmware/phase4_keys_encoder`](https://github.com/domesticmouse/reverse-engineering-gamma/tree/main/firmware/phase4_keys_encoder) (14 Tactile Keys, Rotary Encoder & 1 kHz Timer ISR)
 
@@ -36,7 +37,7 @@ All hardware pin assignments, peripheral channel constants, and polarity inversi
 | **OLED Display** | 1.3" 128x64 Monochrome | `D11` (SCL), `D12` (SDA) | `I2C1` @ `0x3D` (1 MHz) | N/A | [Display Reference](references/display.md) |
 | **Potentiometers** | 4 Top Knobs (Chord/Notes Vol & Filter) | `D18`, `D17`, `D19`, `D20` | `ADC1` (Ch 7, 5, 3, 11) | **Inverted** (`1.0 - raw`) | [Analog Inputs Reference](references/analog_inputs.md) |
 | **Left Joystick** | LX (Mod/Pitch), LY (Mod/Pitch) | `D22`, `D21` | `ADC1` (Ch 19, 4) | LX: Normal, LY: **Inverted** | [Analog Inputs Reference](references/analog_inputs.md) |
-| **Right Joystick**| RX (Filter/FX), RY (Filter/FX) | `D24`, `D23` | `ADC1` (Ch 17, 18) | RX: **Inverted**, RY: **Inverted** | [Analog Inputs Reference](references/analog_inputs.md) |
+| **Right Joystick** | RX (Filter/FX), RY (Filter/FX) | `D24`, `D23` | `ADC1` (Ch 17, 18) | RX: **Inverted**, RY: **Inverted** | [Analog Inputs Reference](references/analog_inputs.md) |
 | **Note Keys** | 7 Tactile Switches (N1–N7) | `D1`–`D7` | Discrete GPIO w/ Pull-up | Active-Low (`0` = Pressed) | [Digital Keys Reference](references/digital_keys.md) |
 | **Chord Keys** | 7 Tactile Switches (C1–C7) | `D8`–`D10`, `D13`, `D14`, `D26`, `D27` | Discrete GPIO w/ Pull-up | Active-Low (`0` = Pressed) | [Digital Keys Reference](references/digital_keys.md) |
 | **Rotary Dial** | Quadrature Encoder & Push Switch | `D15` (A), `D16` (B), `D28` (Click) | GPIO Pull-up / FSM | 4 transitions / detent | [Rotary Encoder Reference](references/rotary_encoder.md) |

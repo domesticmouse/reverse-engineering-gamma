@@ -69,8 +69,8 @@ flowchart TD
 | **Sampling & Loops** | [`GranularPlayer`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Sampling/granularplayer.h) (time-stretch & pitch shift), [`Looper`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/looper.h) (Frippertronics tape loops, overdub) | `Sampling/`, `Utility/` |
 | **Dynamics** | [`Limiter`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Dynamics/limiter.h) (peak block limiter), [`CrossFade`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Dynamics/crossfade.h), [`Compressor`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/DaisySP-LGPL/Source/Dynamics/compressor.h) (sidechain capable) [LGPL] | `Dynamics/` |
 | **Noise Generators** | [`WhiteNoise`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Noise/whitenoise.h), [`ClockedNoise`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Noise/clockednoise.h), [`Dust`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Noise/dust.h) (vinyl crackle), [`FractalRandomGenerator`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Noise/fractal_noise.h) (1/f) | `Noise/` |
-| **Control & Envelopes**| [`Adsr`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Control/adsr.h) (curve shaping, block-update support), [`AdEnv`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Control/adenv.h), [`Phasor`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Control/phasor.h) (0.0–1.0 ramp) | `Control/` |
-| **Utilities & Buffers**| [`DelayLine`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/delayline.h) (Hermite cubic interpolation), [`DcBlock`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/dcblock.h), [`Metro`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/metro.h), [`Maytrig`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/maytrig.h), [`SampleHold`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/samplehold.h) | `Utility/` |
+| **Control & Envelopes** | [`Adsr`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Control/adsr.h) (curve shaping, block-update support), [`AdEnv`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Control/adenv.h), [`Phasor`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Control/phasor.h) (0.0–1.0 ramp) | `Control/` |
+| **Utilities & Buffers** | [`DelayLine`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/delayline.h) (Hermite cubic interpolation), [`DcBlock`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/dcblock.h), [`Metro`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/metro.h), [`Maytrig`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/maytrig.h), [`SampleHold`](https://github.com/domesticmouse/reverse-engineering-gamma/blob/main/DaisySP/Source/Utility/samplehold.h) | `Utility/` |
 
 ---
 
@@ -91,6 +91,7 @@ flowchart TD
   * `DelayLine<float, 48000>` allocates **192 KB**.
 * **Storage Directive:**
   Never allocate these classes locally on the function stack or in DTCM. Place them in static external SDRAM:
+
   ```cpp
   static ReverbSc DSY_SDRAM_BSS reverb;
   static DelayLine<float, 48000 * 2> DSY_SDRAM_BSS delay_line;
@@ -134,11 +135,14 @@ float blep = ThisBlepSample(t);                    // PolyBLEP anti-aliasing ste
 ## 7. Verification Workflows
 
 ### 7.1 Verify Build & Memory Footprint
+
 Run from the firmware project directory:
+
 ```bash
 make clean && make -j
 arm-none-eabi-size build/*.elf
 ```
+
 *Verify that `.data` and `.bss` allocated to DTCM (`0x20000000`) do not exceed 128 KB.*
 
 ---

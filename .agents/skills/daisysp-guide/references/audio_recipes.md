@@ -5,6 +5,7 @@ This reference document contains production-ready C++ DSP recipes for `libDaisy`
 ---
 
 ## Recipe 1: Monophonic Subtractive Synth Voice
+
 *Components: `Oscillator`, `LadderFilter`, `Adsr`, and `Overdrive`.*
 
 ```cpp
@@ -84,6 +85,7 @@ int main(void)
 ---
 
 ## Recipe 2: Ambient Stereo Guitar Multi-FX Chain
+
 *Components: `Overdrive`, `Chorus`, `DelayLine`, and `ReverbSc`.*
 
 ```cpp
@@ -149,6 +151,7 @@ void AudioCallback(AudioHandle::InputBuffer in,
 ---
 
 ## Recipe 3: Algorithmic Techno Drum Sequencer
+
 *Components: `Metro`, `Maytrig`, `AnalogBassDrum`, `AnalogSnareDrum`, `HiHat`.*
 
 ```cpp

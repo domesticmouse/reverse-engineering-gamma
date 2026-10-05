@@ -53,7 +53,7 @@ static const uint8_t kStateTable[7][4] = {
 > [!WARNING]
 > **Dropped Clicks Hazard:**
 > An OLED update (`oled.Update()`) via I2C blocks the processor for 9 to 23 ms. Polling the rotary encoder in the main application loop will drop up to 10–20 quadrature transitions while the screen redraws.
-> 
+>
 > **Requirement:** Sample the encoder in a **1 kHz hardware timer interrupt (e.g., `TIM5`)** or in the audio DMA callback (`AudioCallback`).
 
 ```cpp
@@ -107,6 +107,7 @@ void TimerCallback(void* data)
 ## 4. Hardware Timer Configuration (`TIM5` @ 1 kHz)
 
 On the STM32H750 running at 480 MHz, the timer peripheral bus clock (`APB1` timer clock) runs at 240 MHz.
+
 * Prescaler: `240 - 1` -> $240\text{ MHz} / 240 = 1\text{ MHz}$ tick frequency.
 * Period: `1000` -> $1\text{ MHz} / 1000 = 1\text{ kHz}$ interrupt frequency (1 ms period).
 

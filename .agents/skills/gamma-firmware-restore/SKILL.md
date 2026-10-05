@@ -38,11 +38,13 @@ This skill provides the recovery workflow to unbrick and restore official factor
 ### Method 1: Automated CLI Restore (Recommended)
 
 Run the automated polling script:
+
 ```bash
 python3 .agents/skills/gamma-firmware-restore/scripts/restore_firmware.py
 ```
 
 **Steps:**
+
 1. The script automatically verifies or downloads `backups/gamma-v2.0.3.bin` and starts polling `dfu-util` every 100ms.
 2. Trigger bootloader mode on the Gamma:
    - **Option A:** Press the **RESET** button on the Daisy Seed 2 DFM (or cycle the power switch).
@@ -58,14 +60,18 @@ If flashing manually:
 
 1. Put the Daisy Seed into bootloader mode (Hold **BOOT**, tap **RESET**, release **BOOT**, or tap **BOOT** during the startup grace period to extend it indefinitely).
 2. Verify the DFU interface is active:
+
    ```bash
    dfu-util -l
    ```
+
    *Expected output:* `Found DFU: [0483:df11] ... Product: "Daisy Bootloader" (Electrosmith)`
 3. Flash the firmware binary:
+
    ```bash
    dfu-util -a 0 -s 0x90040000:leave -D backups/gamma-v2.0.3.bin
    ```
+
    > [!NOTE]
    > `dfu-util: Error during download get_status` / exit code 74 upon `:leave` is normal. The STM32 resets immediately upon receiving the leave command, causing the follow-up USB query to disconnect.
 
@@ -87,10 +93,13 @@ If using [gammaupdatetool.netlify.app](https://gammaupdatetool.netlify.app/):
 ## Post-Restore Verification
 
 Check that the device enumerates correctly on the host system:
+
 ```bash
 ioreg -p IOUSB -l -w0 | grep -A 10 "Gamma"
 ```
+
 *Expected values:*
+
 - `kUSBProductString` = `"Gamma"`
 - `kUSBVendorString` = `"Electrosmith"`
 - `idVendor` = `1155` (`0x0483`)
