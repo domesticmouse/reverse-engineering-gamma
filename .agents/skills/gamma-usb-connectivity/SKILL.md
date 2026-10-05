@@ -12,6 +12,7 @@ description: >-
 This skill documents how to interface with the **this.is.NOISE Gamma Mini Synth** over USB using its embedded **Electro-Smith Daisy Seed 2 DFM** (ARM Cortex-M7 @ 480 MHz, STM32H750IBK6).
 
 It includes:
+
 1. **Hardware & USB CDC Architecture**: Device identifiers, Full-Speed peripheral configuration, and host port enumeration.
 2. **Deadlock Immunity & Real-Time Audio Protection**: Eliminating the blocking hazards inherent in standard libDaisy USB logging.
 3. **Firmware Sample Code**: Drop-in C++ driver [`gamma_usb.h`](resources/gamma_usb.h) and implementation patterns.
