@@ -12,23 +12,23 @@ The Gamma synth is powered by an embedded **Electro-Smith Daisy Seed 2 DFM** (AR
 
 ```mermaid
 flowchart TD
-    subgraph Gamma Front Panel
-        K["4 Potentiometers (Knobs)\nChord/Notes Vol & Filter\nADC1"]
-        J["2 Dual-Axis Joysticks\nPitch, Res, Mod, Pan\nADC1"]
-        SW["14 Tactile Switches\n7 Note Keys + 7 Chord Keys\nDiscrete GPIO Pull-Up"]
-        ENC["Rotary Encoder + Push Button\nQuadrature Gray Code & Select\nGPIO TIM ISR"]
-        OLED["1.3\" 128x64 OLED Display\nSSD1306 Controller\nI2C1 @ 0x3D"]
+    subgraph Panel ["Gamma Front Panel"]
+        K["4 Potentiometers (Knobs)<br>Chord/Notes Vol & Filter<br>ADC1"]
+        J["2 Dual-Axis Joysticks<br>Pitch, Res, Mod, Pan<br>ADC1"]
+        SW["14 Tactile Switches<br>7 Note Keys + 7 Chord Keys<br>Discrete GPIO Pull-Up"]
+        ENC["Rotary Encoder + Push Button<br>Quadrature Gray Code & Select<br>GPIO TIM ISR"]
+        OLED["1.3-inch 128x64 OLED Display<br>SSD1306 Controller<br>I2C1 @ 0x3D"]
     end
 
-    subgraph Daisy Seed 2 DFM Core
-        MCU["STM32H750IBK6 (ARM Cortex-M7 @ 480 MHz)\n128 KB Internal Flash | 1 MB RAM\n64 MB QSPI Flash | AXI SRAM"]
-        CODEC["TI PCM3060 Stereo Codec\n24-bit / 48 kHz\nSAI1 Audio Engine"]
-        USB["USB-C Interface (External HS FS)\nDFU Flashing | CDC Serial | USB MIDI"]
+    subgraph Core ["Daisy Seed 2 DFM Core"]
+        MCU["STM32H750IBK6 (ARM Cortex-M7 @ 480 MHz)<br>128 KB Internal Flash | 1 MB RAM<br>64 MB QSPI Flash | AXI SRAM"]
+        CODEC["TI PCM3060 Stereo Codec<br>24-bit / 48 kHz<br>SAI1 Audio Engine"]
+        USB["USB-C Interface (External HS FS)<br>DFU Flashing | CDC Serial | USB MIDI"]
     end
 
-    subgraph Audio Output
+    subgraph Output ["Audio Output"]
         HP["3.5mm Stereo Headphone Output"]
-        AMP["Stereo Class-D Amplifier\nMute Control (seed::D32 / PC3)"]
+        AMP["Stereo Class-D Amplifier<br>Mute Control (seed::D32 / PC3)"]
         SPK["Stereo Case Speakers"]
     end
 
@@ -37,8 +37,8 @@ flowchart TD
     SW -->|Active-Low GPIO| MCU
     ENC -->|Quadrature Signals| MCU
     MCU -->|I2C 1 MHz| OLED
-    MCU <-->|SAI1 Stereo Audio| CODEC
-    MCU <-->|USB-C Port| USB
+    MCU ---|SAI1 Stereo Audio| CODEC
+    MCU ---|USB-C Interface| USB
     CODEC --> HP
     CODEC --> AMP
     AMP --> SPK
