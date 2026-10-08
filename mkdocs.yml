@@ -74,6 +74,7 @@ extra_javascript:
 
 nav:
   - Home: index.md
+  - Getting Started: GETTING_STARTED.md
   - Skills:
       - Overview: skills/index.md
       - Hardware Pinout: skills/gamma-pinout/index.md

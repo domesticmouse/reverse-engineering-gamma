@@ -42,6 +42,7 @@ The documentation website is hosted on GitHub Pages:
 
 The site is built with Material for MkDocs and automatically updated on each commit to the `main` branch via GitHub Actions:
 
+* **[Getting Started Guide](docs/GETTING_STARTED.md)**: Repository setup, submodules, Makefile anatomy, and starter firmware.
 * **[Agent Skills Catalog](https://domesticmouse.github.io/reverse-engineering-gamma/skills/)**: Front-panel hardware drivers, pinout tables, firmware flashing runbooks, recovery workflows, and audio engine blueprints.
 * **[DaisySP Guide](https://domesticmouse.github.io/reverse-engineering-gamma/DAISYSP_GUIDE/)**: DSP synthesis modules, filters, dynamics, memory footprints, and audio recipes.
 * **[libDaisy Guide](https://domesticmouse.github.io/reverse-engineering-gamma/LIBDAISY_GUIDE/)**: STM32H750 HAL, memory sections (AXI SRAM, DTCM), DMA cache coherency, and audio engine architecture.
